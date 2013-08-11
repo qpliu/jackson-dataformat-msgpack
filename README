@@ -1,0 +1,3 @@
+MessagePack serialization and deserialization for Jackson.
+ - http://msgpack.org
+ - https://github.com/FasterXML/jackson
