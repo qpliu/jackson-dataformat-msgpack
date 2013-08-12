@@ -87,7 +87,7 @@ public class MessagePackParser extends JsonParser {
             if (tokenByte < 0x80 || tokenByte >= 0xe0) {
                 _valueType = ValueType.INT;
                 _intValue = tokenByte >= 0xe0 ? tokenByte - 256 : tokenByte;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             }
             if ((tokenByte & 0xf0) == 0x80) {
                 _nextInputContext = new MapInputContext(tokenByte & 0xf,this);
@@ -123,46 +123,46 @@ public class MessagePackParser extends JsonParser {
                 _valueType = ValueType.INT;
                 _intValue = read8();
                 _intValueSigned = false;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xcd:
                 _valueType = ValueType.INT;
                 _intValue = read16();
                 _intValueSigned = false;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xce:
                 _valueType = ValueType.INT;
                 _intValue = read32();
                 _intValueSigned = false;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xcf:
                 _valueType = ValueType.INT;
                 _intValue = read64();
                 _intValueSigned = false;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xd0:
                 _valueType = ValueType.INT;
                 _intValue = read8();
                 _intValueSigned = true;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xd1:
                 _valueType = ValueType.INT;
                 _intValue = read16();
                 _intValueSigned = true;
                 if (_intValue > Short.MAX_VALUE)
                     _intValue = Short.MIN_VALUE + _intValue - Short.MAX_VALUE - 1;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xd2:
                 _valueType = ValueType.INT;
                 _intValue = read32();
                 _intValueSigned = true;
                 if (_intValue > Integer.MAX_VALUE)
                     _intValue = Integer.MIN_VALUE + _intValue - Integer.MAX_VALUE - 1;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xd3:
                 _valueType = ValueType.INT;
                 _intValue = read64();
                 _intValueSigned = true;
-                return JsonToken.VALUE_NUMBER_INT;
+                return intValue();
             case 0xda:
                 return bytesValue(read16());
             case 0xdb:
@@ -189,6 +189,15 @@ public class MessagePackParser extends JsonParser {
             }
             }
             throw _constructError("Unrecognized byte:"+tokenByte);
+        }
+
+        private JsonToken intValue() {
+            if (_objectContext != null && _introspectionResults != null && _objectContext.isEnumType()) {
+                _stringValue = _introspectionResults.getEnum(_objectContext, (int) _intValue);
+                if (_stringValue != null)
+                    return JsonToken.VALUE_STRING;
+            }
+            return JsonToken.VALUE_NUMBER_INT;
         }
 
         private JsonToken bytesValue(int size) throws IOException, JsonParseException {

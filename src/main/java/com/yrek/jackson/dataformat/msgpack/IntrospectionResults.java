@@ -1,5 +1,6 @@
 package com.yrek.jackson.dataformat.msgpack;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 
 import com.fasterxml.jackson.databind.BeanDescription;
@@ -17,15 +18,22 @@ class IntrospectionResults {
     private SerializationConfig _serializationConfig;
     private HashMap<JavaType,HashMap<String,Integer>> _keys;
 
+    private HashMap<JavaType,HashMap<String,Integer>> _enumInt;
+    private HashMap<JavaType,HashMap<Integer,String>> _enumString;
+
     IntrospectionResults(DeserializationConfig deserializationConfig) {
         _deserializationConfig = deserializationConfig;
         _names = new HashMap<JavaType,HashMap<Integer,String>>();
         _types = new HashMap<JavaType,HashMap<String,JavaType>>();
+        _enumInt = new HashMap<JavaType,HashMap<String,Integer>>();
+        _enumString = new HashMap<JavaType,HashMap<Integer,String>>();
     }
 
     IntrospectionResults(SerializationConfig serializationConfig) {
         _serializationConfig = serializationConfig;
         _keys = new HashMap<JavaType,HashMap<String,Integer>>();
+        _enumInt = new HashMap<JavaType,HashMap<String,Integer>>();
+        _enumString = new HashMap<JavaType,HashMap<Integer,String>>();
     }
 
     private void introspectForDeserialization(JavaType javaType) {
@@ -77,5 +85,49 @@ class IntrospectionResults {
             keys = _keys.get(javaType);
         }
         return keys.get(name);
+    }
+
+    private void introspectEnums(JavaType javaType) {
+        assert javaType.isEnumType();
+        HashMap<String,Integer> enumInt = new HashMap<String,Integer>();
+        _enumInt.put(javaType, enumInt);
+        HashMap<Integer,String> enumString = new HashMap<Integer,String>();
+        _enumString.put(javaType, enumString);
+
+        // can't have mixin annotations - are they available for enum values anyhow?
+        Class<?> rawClass = javaType.getRawClass();
+        for (Object value : rawClass.getEnumConstants()) {
+            try {
+                String name = ((Enum) value).name();
+                MessagePackEnum annotation = rawClass.getField(name).getAnnotation(MessagePackEnum.class);
+                if (annotation != null) {
+                    enumInt.put(name, annotation.value());
+                    enumString.put(annotation.value(), name);
+                }
+            } catch (Exception e) {
+            }
+        }
+    }
+
+    public Integer getEnum(JavaType javaType, String name) {
+        if (!javaType.isEnumType())
+            return null;
+        HashMap<String,Integer> enumInt = _enumInt.get(javaType);
+        if (enumInt == null) {
+            introspectEnums(javaType);
+            enumInt = _enumInt.get(javaType);
+        }
+        return enumInt.get(name);
+    }
+
+    public String getEnum(JavaType javaType, int value) {
+        if (!javaType.isEnumType())
+            return null;
+        HashMap<Integer,String> enumString = _enumString.get(javaType);
+        if (enumString == null) {
+            introspectEnums(javaType);
+            enumString = _enumString.get(javaType);
+        }
+        return enumString.get(value);
     }
 }

@@ -165,4 +165,41 @@ public class MessagePackTest {
         Assert.assertEquals("{\"name\":\"contain\",\"example\":{\"name\":\"abc\"}}",jsonMapper.writeValueAsString(data));
         Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x00, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x01, (byte) 0x81, 0x00, (byte) 0xa3, 0x61, 0x62, 0x63 }, msgPackMapper.writeValueAsBytes(data));
     }
+
+    public enum EnumExample {
+        one, two, three
+    }
+
+    @Test
+    public void testSerializeEnum() throws Exception {
+        Assert.assertEquals("\"two\"", jsonMapper.writeValueAsString(EnumExample.two));
+        Assert.assertArrayEquals(new byte[] { (byte) 0xa3, 0x74, 0x77, 0x6f }, msgPackMapper.writeValueAsBytes(EnumExample.two));
+    }
+
+    @Test
+    public void testDeserializeEnum() throws Exception {
+        EnumExample data = msgPackMapper.readValue(new byte[] { (byte) 0xa3, 0x74, 0x77, 0x6f }, EnumExample.class);
+        Assert.assertEquals(EnumExample.two, data);
+    }
+
+    public enum CompactEnumExample {
+        @MessagePackEnum(1)
+        uno,
+        @MessagePackEnum(2)
+        dos,
+        @MessagePackEnum(3)
+        tres,
+    }
+
+    @Test
+    public void testSerializeCompactEnum() throws Exception {
+        Assert.assertEquals("\"tres\"", jsonMapper.writeValueAsString(CompactEnumExample.tres));
+        Assert.assertArrayEquals(new byte[] { 0x03 }, msgPackMapper.writeValueAsBytes(CompactEnumExample.tres));
+    }
+
+    @Test
+    public void testDeserializeCompactEnum() throws Exception {
+        CompactEnumExample data = msgPackMapper.readValue(new byte[] { 0x03 }, CompactEnumExample.class);
+        Assert.assertEquals(CompactEnumExample.tres, data);
+    }
 }

@@ -449,6 +449,13 @@ public class MessagePackGenerator extends JsonGenerator {
      */
     @Override
     public void writeString(String text) throws IOException, JsonGenerationException {
+        if (_objectContext != null && _introspectionResults != null && _objectContext.isEnumType()) {
+            Integer enumInt = _introspectionResults.getEnum(_objectContext, text);
+            if (enumInt != null) {
+                writeNumber(enumInt.longValue());
+                return;
+            }
+        }
         byte[] bytes = text.getBytes("UTF-8");
         writeUTF8String(bytes, 0, bytes.length);
     }
@@ -476,6 +483,13 @@ public class MessagePackGenerator extends JsonGenerator {
      * if possible.
      */
     public void writeString(SerializableString text) throws IOException, JsonGenerationException {
+        if (_objectContext != null && _introspectionResults != null && _objectContext.isEnumType()) {
+            Integer enumInt = _introspectionResults.getEnum(_objectContext, text.toString());
+            if (enumInt != null) {
+                writeNumber(enumInt.longValue());
+                return;
+            }
+        }
         byte[] bytes = text.asUnquotedUTF8();
         writeUTF8String(bytes, 0, bytes.length);
     }
