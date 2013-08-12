@@ -7,14 +7,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class MessagePackTest {
     private ObjectMapper jsonMapper = new ObjectMapper();
-    private ObjectMapper msgPackMapper = new ObjectMapper(new MessagePackFactory());
+    private ObjectMapper msgPackMapper = new MessagePackObjectMapper();
 
     @Test
-    public void testMessagePack() throws Exception {
+    public void testSerializeHashMap() throws Exception {
         HashMap data = new HashMap();
         data.put("compact", true);
         data.put("schema", 0);
@@ -30,14 +31,14 @@ public class MessagePackTest {
     }
 
     @Test
-    public void testMessagePack2() throws Exception {
+    public void testSerializeExample() throws Exception {
         Example data = new Example();
         Assert.assertEquals("{\"compact\":true,\"schema\":0}",jsonMapper.writeValueAsString(data));
         Assert.assertArrayEquals(new byte[] { (byte) 0x82, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc3, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x00 }, msgPackMapper.writeValueAsBytes(data));
     }
 
     @Test
-    public void testMessagePack3() throws Exception {
+    public void testSerializeExample2() throws Exception {
         Example[] data = new Example[] { new Example(), null, new Example() };
         data[0].compact = false;
         data[0].schema = 45;
@@ -47,7 +48,7 @@ public class MessagePackTest {
     }
 
     @Test
-    public void testMessagePack4() throws Exception {
+    public void testDeserializeHashMap() throws Exception {
         HashMap map = msgPackMapper.readValue(new byte[] { (byte) 0x82, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc2, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x2d }, HashMap.class);
         Assert.assertEquals(2, map.size());
         Assert.assertEquals(Integer.valueOf(45), map.get("schema"));
@@ -55,7 +56,15 @@ public class MessagePackTest {
     }
 
     @Test
-    public void testMessagePack5() throws Exception {
+    public void testDeserializeExample() throws Exception {
+        Example data = msgPackMapper.readValue(new byte[] { (byte) 0x83, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc2, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x2d, (byte) 0xa5, 0x62, 0x79, 0x74, 0x65, 0x73, (byte) 0xa6, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, Example.class);
+        Assert.assertEquals(false, data.compact);
+        Assert.assertEquals(45, data.schema);
+        Assert.assertArrayEquals(new byte[] { 1, 2, 3, 4, 5, 6 }, data.bytes);
+    }
+
+    @Test
+    public void testDeserializeExample2() throws Exception {
         Example[] data = msgPackMapper.readValue(new byte[] { (byte) 0x93, (byte) 0x83, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc2, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x2d, (byte) 0xa5, 0x62, 0x79, 0x74, 0x65, 0x73, (byte) 0xa6, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, (byte) 0xc0, (byte) 0x82, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc3, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x00 }, Example[].class);
         Assert.assertEquals(3, data.length);
         Assert.assertNotNull(data[0]);
@@ -67,5 +76,94 @@ public class MessagePackTest {
         Assert.assertEquals(true, data[2].compact);
         Assert.assertEquals(0, data[2].schema);
         Assert.assertNull(data[2].bytes);
+    }
+
+    @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
+    public static class CompactExample {
+        @MessagePackMapKey(0)
+        public boolean compact = true;
+        @MessagePackMapKey(1)
+        public int schema = 0;
+        public byte[] bytes = null;
+    }
+
+    @Test
+    public void testDeserializeCompactExample() throws Exception {
+        CompactExample data = msgPackMapper.readValue(new byte[] { (byte) 0x82, 0x0, (byte) 0xc3, 0x01, 0x40 }, CompactExample.class);
+        Assert.assertEquals(true, data.compact);
+        Assert.assertEquals(64, data.schema);
+        Assert.assertNull(data.bytes);
+    }
+
+    @Test @Ignore("@MessagePackKey annotation not implemented for serialization")
+    public void testSerializeCompactExample() throws Exception {
+        CompactExample data = new CompactExample();
+        data.schema = 2;
+        Assert.assertEquals("{\"compact\":true,\"schema\":2}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x0, (byte) 0xc3, 0x01, 0x40 }, msgPackMapper.writeValueAsBytes(data));
+    }
+
+    @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
+    public static class ContainExample {
+        public String name;
+        public ContainExample example;
+    }
+
+    @Test
+    public void testDeserializeContainExample() throws Exception {
+        ContainExample data = msgPackMapper.readValue(new byte[] { (byte) 0x81, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e }, ContainExample.class);
+        Assert.assertEquals("contain", data.name);
+        Assert.assertNull(data.example);
+
+        data = msgPackMapper.readValue(new byte[] { (byte) 0x82, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, (byte) 0xa7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, (byte) 0x81, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa3, 0x61, 0x62, 0x63 }, ContainExample.class);
+        Assert.assertEquals("contain", data.name);
+        Assert.assertNotNull(data.example);
+        Assert.assertEquals("abc", data.example.name);
+        Assert.assertNull(data.example.example);
+    }
+
+    @Test
+    public void testSerializeContainExample() throws Exception {
+        ContainExample data = new ContainExample();
+        data.name = "contain";
+        Assert.assertEquals("{\"name\":\"contain\"}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x81, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e }, msgPackMapper.writeValueAsBytes(data));
+        data.example = new ContainExample();
+        data.example.name = "abc";
+        Assert.assertEquals("{\"name\":\"contain\",\"example\":{\"name\":\"abc\"}}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x82, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, (byte) 0xa7, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, (byte) 0x81, (byte) 0xa4, 0x6e, 0x61, 0x6d, 0x65, (byte) 0xa3, 0x61, 0x62, 0x63 }, msgPackMapper.writeValueAsBytes(data));
+    }
+
+    @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
+    public static class CompactContainExample {
+        @MessagePackMapKey(0)
+        public String name;
+        @MessagePackMapKey(1)
+        public CompactContainExample example;
+    }
+
+    @Test
+    public void testDeserializeCompactContainExample() throws Exception {
+        CompactContainExample data = msgPackMapper.readValue(new byte[] { (byte) 0x81, 0x00, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e }, CompactContainExample.class);
+        Assert.assertEquals("contain", data.name);
+        Assert.assertNull(data.example);
+
+        data = msgPackMapper.readValue(new byte[] { (byte) 0x82, 0x00, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x01, (byte) 0x81, 0x00, (byte) 0xa3, 0x61, 0x62, 0x63 }, CompactContainExample.class);
+        Assert.assertEquals("contain", data.name);
+        Assert.assertNotNull(data.example);
+        Assert.assertEquals("abc", data.example.name);
+        Assert.assertNull(data.example.example);
+    }
+
+    @Test @Ignore("@MessagePackKey annotation not implemented for serialization")
+    public void testSerializeCompactContainExample() throws Exception {
+        CompactContainExample data = new CompactContainExample();
+        data.name = "contain";
+        Assert.assertEquals("{\"name\":\"contain\"}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x81, 0x00, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e }, msgPackMapper.writeValueAsBytes(data));
+        data.example = new CompactContainExample();
+        data.example.name = "abc";
+        Assert.assertEquals("{\"name\":\"contain\",\"example\":{\"name\":\"abc\"}}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x00, (byte) 0xa7, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x01, (byte) 0x81, 0x00, (byte) 0xa3, 0x61, 0x62, 0x63 }, msgPackMapper.writeValueAsBytes(data));
     }
 }

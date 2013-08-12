@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.TreeNode;
 import com.fasterxml.jackson.core.Version;
 import com.fasterxml.jackson.core.io.IOContext;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 
 public class MessagePackParser extends JsonParser {
     public enum Feature implements MessagePackFeature.Feature {
@@ -228,11 +229,21 @@ public class MessagePackParser extends JsonParser {
         final int _size;
         final InputContext _parent;
         final JsonToken _endToken;
+        final JavaType _parentObjectContext;
 
         ContainerInputContext(int size, InputContext parent, JsonToken endToken) {
             _size = size;
             _parent = parent;
             _endToken = endToken;
+            _parentObjectContext = _objectContext;
+            if (_introspectionResults != null && _objectContext != null) {
+                if (parent.inObject() && parent.getCurrentName() != null)
+                    _objectContext = _introspectionResults.getType(_objectContext, parent.getCurrentName());
+                else if (parent.inArray())
+                    _objectContext = _objectContext.getContentType();
+                else if (!parent.inRoot())
+                    _objectContext = null;
+            }
         }
 
         @Override
@@ -240,6 +251,7 @@ public class MessagePackParser extends JsonParser {
             if (getEntryCount() < _size)
                 return super.nextToken();
             _nextInputContext = _parent;
+            _objectContext = _parentObjectContext;
             return _endToken;
         }
 
@@ -280,7 +292,13 @@ public class MessagePackParser extends JsonParser {
                 _currentName = _stringValue;
                 return JsonToken.FIELD_NAME;
             case INT:
-                //... look for name of annotated field in _objectContext
+                if (_objectContext != null && _introspectionResults != null) {
+                    _stringValue = _introspectionResults.getName(_objectContext, (int) _intValue);
+                    if (_stringValue != null) {
+                        _currentName = _stringValue;
+                        return JsonToken.FIELD_NAME;
+                    }
+                }
                 // FALLTHROUGH
             default:
                 throw _constructError("Unexpected key type");
@@ -301,7 +319,8 @@ public class MessagePackParser extends JsonParser {
 
     private boolean _closed;
     private InputContext _inputContext;
-    private Class<?> _objectContext;
+    private JavaType _objectContext;
+    private IntrospectionResults _introspectionResults;
     private JsonToken _currentToken;
     private JsonToken _lastClearedToken;
     private long _currentInputCount;
@@ -314,6 +333,11 @@ public class MessagePackParser extends JsonParser {
         _parserFeatures = parserFeatures;
         _inputStream = in;
         _inputContext = new InputContext();
+    }
+
+    void setObjectContext(JavaType objectContext, IntrospectionResults introspectionResults) {
+        _objectContext = objectContext;
+        _introspectionResults = introspectionResults;
     }
 
     public MessagePackParser enable(MessagePackFactory.Feature f) {
@@ -1024,104 +1048,5 @@ public class MessagePackParser extends JsonParser {
     public String getValueAsString(String defaultValue) throws IOException, JsonParseException {
         String text = getText();
         return text == null ? defaultValue : text;
-    }
-
-    /**
-     * Method to deserialize JSON content into a non-container
-     * type (it can be an array type, however): typically a bean, array
-     * or a wrapper type (like {@link java.lang.Boolean}).
-     * <b>Note</b>: method can only be called if the parser has
-     * an object codec assigned; this is true for parsers constructed
-     * by <code>MappingJsonFactory</code> (from "jackson-databind" jar)
-     * but not for {@link JsonFactory} (unless its <code>setCodec</code>
-     * method has been explicitly called).
-     *<p>
-     * This method may advance the event stream, for structured types
-     * the current token will be the closing end marker (END_ARRAY,
-     * END_OBJECT) of the bound structure. For non-structured Json types
-     * (and for {@link JsonToken#VALUE_EMBEDDED_OBJECT})
-     * stream is not advanced.
-     *<p>
-     * Note: this method should NOT be used if the result type is a
-     * container ({@link java.util.Collection} or {@link java.util.Map}.
-     * The reason is that due to type erasure, key and value types
-     * can not be introspected when using this method.
-     */
-    @Override
-    public <T> T readValueAs(Class<T> valueType) throws IOException, JsonProcessingException {
-        Class<?> saveObjectContext = _objectContext;
-        _objectContext = valueType;
-        T value = super.readValueAs(valueType);
-        _objectContext = saveObjectContext;
-        return value;
-    }
-
-    /**
-     * Method to deserialize JSON content into a Java type, reference
-     * to which is passed as argument. Type is passed using so-called
-     * "super type token"
-     * and specifically needs to be used if the root type is a 
-     * parameterized (generic) container type.
-     * <b>Note</b>: method can only be called if the parser has
-     * an object codec assigned; this is true for parsers constructed
-     * by <code>MappingJsonFactory</code> (defined in 'jackson-databind' bundle)
-     * but not for {@link JsonFactory} (unless its <code>setCodec</code>
-     * method has been explicitly called).
-     *<p>
-     * This method may advance the event stream, for structured types
-     * the current token will be the closing end marker (END_ARRAY,
-     * END_OBJECT) of the bound structure. For non-structured Json types
-     * (and for {@link JsonToken#VALUE_EMBEDDED_OBJECT})
-     * stream is not advanced.
-     */
-    @Override
-    public <T> T readValueAs(TypeReference<?> valueTypeRef) throws IOException, JsonProcessingException {
-        Class<?> saveObjectContext = _objectContext;
-        _objectContext = null;
-        T value = super.readValueAs(valueTypeRef);
-        _objectContext = saveObjectContext;
-        return value;
-    }
-
-    /**
-     * Method for reading sequence of Objects from parser stream,
-     * all with same specified value type.
-     */
-    @Override
-    public <T> Iterator<T> readValuesAs(Class<T> valueType) throws IOException, JsonProcessingException {
-        Class<?> saveObjectContext = _objectContext;
-        _objectContext = valueType;
-        Iterator<T> iterator = super.readValuesAs(valueType);
-        _objectContext = saveObjectContext;
-        return iterator;
-    }
-
-    /**
-     * Method for reading sequence of Objects from parser stream,
-     * all with same specified value type.
-     */
-    @Override
-    public <T> Iterator<T> readValuesAs(TypeReference<?> valueTypeRef) throws IOException, JsonProcessingException {
-        Class<?> saveObjectContext = _objectContext;
-        _objectContext = null;
-        Iterator<T> iterator = super.readValuesAs(valueTypeRef);
-        _objectContext = saveObjectContext;
-        return iterator;
-    }
-    
-    /**
-     * Method to deserialize JSON content into equivalent "tree model",
-     * represented by root {@link TreeNode} of resulting model.
-     * For JSON Arrays it will an array node (with child nodes),
-     * for objects object node (with child nodes), and for other types
-     * matching leaf node type
-     */
-    @Override
-    public <T extends TreeNode> T readValueAsTree() throws IOException, JsonProcessingException {
-        Class<?> saveObjectContext = _objectContext;
-        _objectContext = null;
-        T tree = super.readValueAsTree();
-        _objectContext = saveObjectContext;
-        return tree;
     }
 }
