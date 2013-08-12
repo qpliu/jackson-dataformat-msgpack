@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.SerializableString;
 import com.fasterxml.jackson.core.TreeNode;
 import com.fasterxml.jackson.core.Version;
 import com.fasterxml.jackson.core.io.IOContext;
+import com.fasterxml.jackson.databind.JavaType;
 
 public class MessagePackGenerator extends JsonGenerator {
     public enum Feature implements MessagePackFeature.Feature {
@@ -99,11 +100,13 @@ public class MessagePackGenerator extends JsonGenerator {
 
     private class ContainerOutputContext extends OutputContext {
         protected OutputContext _context;
+        JavaType _saveObjectContext;
 
         ContainerOutputContext(OutputContext context) {
             super(new ByteArrayOutputStream());
             _context = context;
             _index = -1;
+            _saveObjectContext = _objectContext;
         }
 
         @Override
@@ -114,6 +117,13 @@ public class MessagePackGenerator extends JsonGenerator {
         @Override
         public void endElement() {
             _index++;
+            _objectContext = _saveObjectContext;
+        }
+
+        @Override
+        public OutputContext endContext() throws IOException {
+            _objectContext = null;
+            return _context;
         }
     }
 
@@ -136,7 +146,7 @@ public class MessagePackGenerator extends JsonGenerator {
                 _context.i32(count);
             }
             ((ByteArrayOutputStream) out()).writeTo(_context.out());
-            return _context;
+            return super.endContext();
         }
     }
 
@@ -183,7 +193,7 @@ public class MessagePackGenerator extends JsonGenerator {
                 _context.i32(count);
             }
             ((ByteArrayOutputStream) out()).writeTo(_context.out());
-            return _context;
+            return super.endContext();
         }
     }
 
@@ -194,7 +204,8 @@ public class MessagePackGenerator extends JsonGenerator {
     private OutputStream _outputStream;
 
     private OutputContext _outputContext;
-    private Class<?> _objectContext;
+    private JavaType _objectContext;
+    private IntrospectionResults _introspectionResults;
     private boolean _closed;
 
     public MessagePackGenerator(IOContext ctxt, ObjectCodec codec, EnumSet<MessagePackFactory.Feature> msgPackFeatures, EnumSet<Feature> generatorFeatures, OutputStream out) {
@@ -205,6 +216,15 @@ public class MessagePackGenerator extends JsonGenerator {
         _outputStream = out;
         
         _outputContext = new OutputContext(out);
+    }
+
+    void setObjectContext(JavaType objectContext, IntrospectionResults introspectionResults) {
+        _objectContext = objectContext;
+        _introspectionResults = introspectionResults;
+    }
+
+    void setObjectContext(JavaType objectContext) {
+        _objectContext = objectContext;
     }
 
     /**
@@ -385,7 +405,13 @@ public class MessagePackGenerator extends JsonGenerator {
     @Override
     public void writeFieldName(String name) throws IOException, JsonGenerationException {
         _outputContext.setCurrentName(name);
-        //... look at _objectContext for annotation for numeric field identifier
+        if (_objectContext != null && _introspectionResults != null) {
+            Integer key = _introspectionResults.getKey(_objectContext, name);
+            if (key != null) {
+                writeNumber(key.longValue());
+                return;
+            }
+        }
         writeString(name);
     }
 
@@ -402,8 +428,15 @@ public class MessagePackGenerator extends JsonGenerator {
      */
     @Override
     public void writeFieldName(SerializableString name) throws IOException, JsonGenerationException {
-        _outputContext.setCurrentName(name.getValue());
-        //... look at _objectContext for annotation for numeric field identifier
+        String nameValue = name.getValue();
+        _outputContext.setCurrentName(nameValue);
+        if (_objectContext != null && _introspectionResults != null) {
+            Integer key = _introspectionResults.getKey(_objectContext, nameValue);
+            if (key != null) {
+                writeNumber(key.longValue());
+                return;
+            }
+        }
         writeString(name);
     }
 
@@ -836,6 +869,7 @@ public class MessagePackGenerator extends JsonGenerator {
         _outputContext.i8(0xc0);
         _outputContext.endElement();
     }
+
     /**
      * Method for writing given Java object (POJO) as Json.
      * Exactly how the object gets written depends on object
@@ -852,11 +886,7 @@ public class MessagePackGenerator extends JsonGenerator {
         if (pojo == null) {
             writeNull();
         } else {
-            Class<?> saveObjectContext = _objectContext;
-            _objectContext = pojo.getClass();
             _objectCodec.writeValue(this, pojo);
-            _outputContext.endElement();
-            _objectContext = saveObjectContext;
         }
     }
 

@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class MessagePackTest {
@@ -95,12 +94,12 @@ public class MessagePackTest {
         Assert.assertNull(data.bytes);
     }
 
-    @Test @Ignore("@MessagePackKey annotation not implemented for serialization")
+    @Test
     public void testSerializeCompactExample() throws Exception {
         CompactExample data = new CompactExample();
-        data.schema = 2;
-        Assert.assertEquals("{\"compact\":true,\"schema\":2}",jsonMapper.writeValueAsString(data));
-        Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x0, (byte) 0xc3, 0x01, 0x40 }, msgPackMapper.writeValueAsBytes(data));
+        data.schema = 13;
+        Assert.assertEquals("{\"compact\":true,\"schema\":13}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x0, (byte) 0xc3, 0x01, 0x0d }, msgPackMapper.writeValueAsBytes(data));
     }
 
     @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
@@ -155,7 +154,7 @@ public class MessagePackTest {
         Assert.assertNull(data.example.example);
     }
 
-    @Test @Ignore("@MessagePackKey annotation not implemented for serialization")
+    @Test
     public void testSerializeCompactContainExample() throws Exception {
         CompactContainExample data = new CompactContainExample();
         data.name = "contain";

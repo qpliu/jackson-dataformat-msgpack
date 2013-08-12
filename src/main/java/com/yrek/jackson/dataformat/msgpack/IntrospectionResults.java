@@ -64,7 +64,7 @@ class IntrospectionResults {
     private void introspectForSerialization(JavaType javaType) {
         HashMap<String,Integer> keys = new HashMap<String,Integer>();
         _keys.put(javaType, keys);
-        BeanDescription beanDescription = _deserializationConfig.introspect(javaType);
+        BeanDescription beanDescription = _serializationConfig.introspect(javaType);
         for (BeanPropertyDefinition bpd : beanDescription.findProperties())
             if (bpd.couldSerialize() && bpd.getAccessor().hasAnnotation(MessagePackMapKey.class))
                 keys.put(bpd.getName(), bpd.getMutator().getAnnotation(MessagePackMapKey.class).value());
