@@ -103,6 +103,12 @@ public class MessagePackGenerator extends JsonGenerator {
         JavaType _saveObjectContext;
 
         ContainerOutputContext(OutputContext context) {
+            // This could be made more efficient by getting the element
+            // count beforehand instead of serializing into a buffer and
+            // then copying the buffer after getting the count.
+            // Probably need to configure a decorated SerializerFactory
+            // that returns serializers decorated to pass the relevant
+            // counts to the generator.
             super(new ByteArrayOutputStream());
             _context = context;
             _index = -1;
