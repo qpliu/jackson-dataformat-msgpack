@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.fasterxml.jackson.databind.type.TypeBindings;
 
+import com.yrek.jackson.dataformat.protobuf.Protobuf;
+
 class IntrospectionResults {
     private DeserializationConfig _deserializationConfig;
     private HashMap<JavaType,HashMap<Integer,String>> _names;
@@ -45,8 +47,10 @@ class IntrospectionResults {
         for (BeanPropertyDefinition bpd : beanDescription.findProperties())
             if (bpd.couldDeserialize()) {
                 types.put(bpd.getName(), bpd.getMutator().getType(new TypeBindings(_deserializationConfig.getTypeFactory(), javaType)));
-                if (bpd.getMutator().hasAnnotation(MessagePackMapKey.class)) {
-                    names.put(bpd.getMutator().getAnnotation(MessagePackMapKey.class).value(), bpd.getName());
+                if (bpd.getMutator().hasAnnotation(MessagePack.class)) {
+                    names.put(bpd.getMutator().getAnnotation(MessagePack.class).value(), bpd.getName());
+                } else if (bpd.getMutator().hasAnnotation(Protobuf.class)) {
+                    names.put(bpd.getMutator().getAnnotation(Protobuf.class).value(), bpd.getName());
                 }
             }
     }
@@ -74,8 +78,10 @@ class IntrospectionResults {
         _keys.put(javaType, keys);
         BeanDescription beanDescription = _serializationConfig.introspect(javaType);
         for (BeanPropertyDefinition bpd : beanDescription.findProperties())
-            if (bpd.couldSerialize() && bpd.getAccessor().hasAnnotation(MessagePackMapKey.class))
-                keys.put(bpd.getName(), bpd.getMutator().getAnnotation(MessagePackMapKey.class).value());
+            if (bpd.couldSerialize() && bpd.getAccessor().hasAnnotation(MessagePack.class))
+                keys.put(bpd.getName(), bpd.getMutator().getAnnotation(MessagePack.class).value());
+            else if (bpd.couldSerialize() && bpd.getAccessor().hasAnnotation(Protobuf.class))
+                keys.put(bpd.getName(), bpd.getMutator().getAnnotation(Protobuf.class).value());
     }
 
     public Integer getKey(JavaType javaType, String name) {
@@ -99,10 +105,17 @@ class IntrospectionResults {
         for (Object value : rawClass.getEnumConstants()) {
             try {
                 String name = ((Enum) value).name();
-                MessagePackEnum annotation = rawClass.getField(name).getAnnotation(MessagePackEnum.class);
+                MessagePack annotation = rawClass.getField(name).getAnnotation(MessagePack.class);
                 if (annotation != null) {
                     enumInt.put(name, annotation.value());
                     enumString.put(annotation.value(), name);
+                    continue;
+                }
+                Protobuf protobuf = rawClass.getField(name).getAnnotation(Protobuf.class);
+                if (protobuf != null) {
+                    enumInt.put(name, protobuf.value());
+                    enumString.put(protobuf.value(), name);
+                    continue;
                 }
             } catch (Exception e) {
             }

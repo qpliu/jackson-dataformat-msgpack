@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.yrek.jackson.dataformat.protobuf.Protobuf;
+
 public class MessagePackTest {
     private ObjectMapper jsonMapper = new ObjectMapper();
     private ObjectMapper msgPackMapper = new MessagePackObjectMapper();
@@ -79,9 +81,9 @@ public class MessagePackTest {
 
     @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
     public static class CompactExample {
-        @MessagePackMapKey(0)
+        @MessagePack(0)
         public boolean compact = true;
-        @MessagePackMapKey(1)
+        @MessagePack(1)
         public int schema = 0;
         public byte[] bytes = null;
     }
@@ -135,9 +137,9 @@ public class MessagePackTest {
 
     @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
     public static class CompactContainExample {
-        @MessagePackMapKey(0)
+        @MessagePack(0)
         public String name;
-        @MessagePackMapKey(1)
+        @MessagePack(1)
         public CompactContainExample example;
     }
 
@@ -183,11 +185,11 @@ public class MessagePackTest {
     }
 
     public enum CompactEnumExample {
-        @MessagePackEnum(1)
+        @MessagePack(1)
         uno,
-        @MessagePackEnum(2)
+        @MessagePack(2)
         dos,
-        @MessagePackEnum(3)
+        @MessagePack(3)
         tres,
     }
 
@@ -201,5 +203,24 @@ public class MessagePackTest {
     public void testDeserializeCompactEnum() throws Exception {
         CompactEnumExample data = msgPackMapper.readValue(new byte[] { 0x03 }, CompactEnumExample.class);
         Assert.assertEquals(CompactEnumExample.tres, data);
+    }
+
+    @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
+    public static class ProtobufExample {
+        @Protobuf(1)
+        public String name;
+        @Protobuf(2)
+        public CompactEnumExample value;
+    }
+
+    @Test
+    public void testProtobufExample() throws Exception {
+        ProtobufExample data = new ProtobufExample();
+        data.name = "proto";
+        data.value = CompactEnumExample.dos;
+        Assert.assertArrayEquals(new byte[] { (byte) 0x82, 0x01, (byte) 0xa5, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x02, 0x02 }, msgPackMapper.writeValueAsBytes(data));
+        data = msgPackMapper.readValue(new byte[] { (byte) 0x82, 0x01, (byte) 0xa3, 0x6d, 0x73, 0x67, 0x02, 0x03 }, ProtobufExample.class);
+        Assert.assertEquals("msg", data.name);
+        Assert.assertEquals(CompactEnumExample.tres, data.value);
     }
 }

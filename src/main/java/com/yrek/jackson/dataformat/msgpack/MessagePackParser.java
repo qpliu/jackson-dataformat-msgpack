@@ -192,10 +192,20 @@ public class MessagePackParser extends JsonParser {
         }
 
         private JsonToken intValue() {
-            if (_objectContext != null && _introspectionResults != null && _objectContext.isEnumType()) {
-                _stringValue = _introspectionResults.getEnum(_objectContext, (int) _intValue);
-                if (_stringValue != null)
-                    return JsonToken.VALUE_STRING;
+            if (_objectContext != null && _introspectionResults != null) {
+                if (_objectContext.isEnumType()) {
+                    _stringValue = _introspectionResults.getEnum(_objectContext, (int) _intValue);
+                    if (_stringValue != null)
+                        return JsonToken.VALUE_STRING;
+                }
+                if (_inputContext.getCurrentName() != null) {
+                    JavaType fieldContext = _introspectionResults.getType(_objectContext, _inputContext.getCurrentName());
+                    if (fieldContext != null && fieldContext.isEnumType()) {
+                        _stringValue = _introspectionResults.getEnum(fieldContext, (int) _intValue);
+                        if (_stringValue != null)
+                            return JsonToken.VALUE_STRING;
+                    }
+                }
             }
             return JsonToken.VALUE_NUMBER_INT;
         }
