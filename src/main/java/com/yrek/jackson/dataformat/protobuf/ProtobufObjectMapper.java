@@ -19,28 +19,25 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.yrek.jackson.dataformat.msgpack.MessagePackVersion;
+
 public class ProtobufObjectMapper extends ObjectMapper {
     private static final long serialVersionUID = 0L;
 
     public ProtobufObjectMapper() {
-        /*
         this(new ProtobufFactory());
-        */
     }
 
-    /*
     public ProtobufObjectMapper(ProtobufFactory protobufFactory) {
         super(protobufFactory);
+        /*
         _serializerFactory = _serializerFactory.withSerializerModifier(new ProtobufBeanSerializerModifier());
+        */
     }
-    */
 
     @Override
     public Version version() {
-        return null;
-        /*
-        return ProtobufVersion.VERSION;
-        */
+        return MessagePackVersion.VERSION;
     }
     
     /**
@@ -48,21 +45,12 @@ public class ProtobufObjectMapper extends ObjectMapper {
      */
     @Override
     protected Object _readValue(DeserializationConfig cfg, JsonParser jp, JavaType valueType) throws IOException, JsonParseException, JsonMappingException {
-        /*
-        if (jp instanceof ProtobufParser)
-            ((ProtobufParser) jp).setObjectContext(valueType, new IntrospectionResults(cfg));
-        */
-        return super._readValue(cfg, jp, valueType);
+        return super._readValue(cfg, setRootContext(jp, valueType), valueType);
     }
     
     @Override
     protected Object _readMapAndClose(JsonParser jp, JavaType valueType) throws IOException, JsonParseException, JsonMappingException {
-        /*
-        //... ought to cache the annotation introspection results in ProtobufObjectMapper
-        if (jp instanceof ProtobufParser)
-            ((ProtobufParser) jp).setObjectContext(valueType, new IntrospectionResults(getDeserializationConfig()));
-        */
-        return super._readMapAndClose(jp, valueType);
+        return super._readMapAndClose(setRootContext(jp, valueType), valueType);
     }
 
     /**
@@ -152,12 +140,22 @@ public class ProtobufObjectMapper extends ObjectMapper {
         return result;
     }
 
-    private JsonGenerator setRootContext(JsonGenerator jgen, Object value) {
-        /*
-        if (jgen instanceof ProtobufGenerator)
-            ((ProtobufGenerator) jgen).setObjectContext(getSerializationConfig().constructType(value.getClass()), new IntrospectionResults(getSerializationConfig()));
-        */
+    private JsonGenerator setRootContext(JsonGenerator jgen, Object value) throws JsonMappingException {
+        if (jgen instanceof ProtobufGenerator) {
+            ProtobufSchema schema = collectTypes(value.getClass());
+            ((ProtobufGenerator) jgen).setObjectContext(schema.getMessageDescription(getSerializationConfig().constructType(value.getClass())), schema);;
+        }
         return jgen;
+    }
+
+    private JsonParser setRootContext(JsonParser jp, JavaType javaType) throws JsonMappingException {
+        /*
+        if (jp instanceof ProtobufParser) {
+            ProtobufSchema schema = collectTypes(javaType);
+            ((ProtobufParser) jp).setObjectContext(schema.getMessageDescription(javaType), schema);
+        }
+        */
+        return jp;
     }
 
     public void collectTypes(ProtobufSchema schema, Class<?>... cls) throws JsonMappingException {

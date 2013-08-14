@@ -38,6 +38,22 @@ public class ProtobufSchema {
                 collectType(messageField.getElementJavaType());
     }
 
+    MessageDescription getMessageDescription(JavaType javaType) {
+        return messages.get(javaType);
+    }
+
+    MessageDescription getMessageDescription(MessageField messageField) {
+        return messages.get(messageField.getElementJavaType());
+    }
+
+    EnumDescription getEnumDescription(JavaType javaType) {
+        return enums.get(javaType);
+    }
+
+    EnumDescription getEnumDescription(MessageField messageField) {
+        return enums.get(messageField.getElementJavaType());
+    }
+
     public String getProtobufDefinition() {
         try {
             return getProtobufDefinition(new StringBuilder()).toString();

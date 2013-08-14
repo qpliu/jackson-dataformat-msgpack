@@ -88,7 +88,7 @@ class MessageDescription {
         if (protobuf != null && protobuf.name().length() > 0)
             return protobuf.name();
         String name = cl.getName();
-        return name.substring(name.lastIndexOf('.') + 1).replace('$', '_');
+        return name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf('$')) + 1);
     }
 
     static String getProtobufName(JavaType javaType) {

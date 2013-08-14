@@ -1,3 +1,4 @@
-MessagePack serialization and deserialization for Jackson.
+MessagePack and Protocol Buffers serialization and deserialization for Jackson.
  - http://msgpack.org
+ - https://developers.google.com/protocol-buffers/
  - https://github.com/FasterXML/jackson
