@@ -1,5 +1,6 @@
 package com.yrek.jackson.dataformat.protobuf;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -8,18 +9,17 @@ import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
-import com.fasterxml.jackson.databind.type.TypeBindings;
 
 class MessageDescription {
     private final String messageName;
     private final HashMap<String,MessageField> byName;
     private final TreeMap<Integer,MessageField> byTag;
 
-    MessageDescription(BeanDescription beanDescription, TypeBindings typeBindings) {
-        this(getProtobufName(beanDescription.getType()), beanDescription, typeBindings);
+    MessageDescription(BeanDescription beanDescription) {
+        this(getProtobufName(beanDescription.getType()), beanDescription);
     }
 
-    MessageDescription(String messageName, BeanDescription beanDescription, TypeBindings typeBindings) {
+    MessageDescription(String messageName, BeanDescription beanDescription) {
         this.messageName = messageName;
         this.byName = new HashMap<String,MessageField>();
         this.byTag = new TreeMap<Integer,MessageField>();
@@ -35,7 +35,7 @@ class MessageDescription {
                 protobuf = annotated.getAnnotation(Protobuf.class);
             if (protobuf == null)
                 continue;
-            MessageField messageField = new MessageField(bpd.getName(), annotated.getType(typeBindings), protobuf);
+            MessageField messageField = new MessageField(bpd.getName(), annotated.getType(beanDescription.bindingsForBeanType()), protobuf);
             byName.put(messageField.getName(), messageField);
             byTag.put(messageField.getTag(), messageField);
         }
@@ -54,14 +54,18 @@ class MessageDescription {
     }
 
     public String getProtobufDefinition() {
-        return getProtobufDefinition(new StringBuilder()).toString();
+        try {
+            return getProtobufDefinition(new StringBuilder()).toString();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    public StringBuilder getProtobufDefinition(StringBuilder stringBuilder) {
-        stringBuilder.append("message ").append(messageName).append(" {\n");
+    public Appendable getProtobufDefinition(Appendable appendable) throws IOException {
+        appendable.append("message ").append(messageName).append(" {\n");
         for (MessageField messageField : getMessageFields())
-            messageField.getProtobufDefinition(stringBuilder.append("  ")).append(";\n");
-        return stringBuilder.append("}\n");
+            messageField.getProtobufDefinition(appendable.append("  ")).append(";\n");
+        return appendable.append("}\n");
     }
 
     static String getProtobufName(Class<?> cl) {
@@ -84,7 +88,7 @@ class MessageDescription {
         if (protobuf != null && protobuf.name().length() > 0)
             return protobuf.name();
         String name = cl.getName();
-        return name.substring(name.lastIndexOf('.') + 1);
+        return name.substring(name.lastIndexOf('.') + 1).replace('$', '_');
     }
 
     static String getProtobufName(JavaType javaType) {

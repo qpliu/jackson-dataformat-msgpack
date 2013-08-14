@@ -1,5 +1,7 @@
 package com.yrek.jackson.dataformat.protobuf;
 
+import java.io.IOException;
+
 import com.fasterxml.jackson.databind.JavaType;
 
 class MessageField {
@@ -23,10 +25,18 @@ class MessageField {
         return protobuf.value();
     }
 
+    public boolean isRepeated() {
+        if (!javaType.isContainerType() || javaType.isMapLikeType())
+            return false;
+        if (javaType.getRawClass() == byte[].class)
+            return false;
+        return true;
+    }
+
     public boolean isPacked() {
         if (!protobuf.packed())
             return false;
-        if ((javaType.isContainerType() || javaType.isCollectionLikeType()) && !javaType.isMapLikeType())
+        if (!isRepeated())
             return false;
         switch (protobuf.type()) {
         case DEFAULT:
@@ -44,24 +54,52 @@ class MessageField {
         return c == boolean.class || c == Boolean.class || c == byte.class || c == Byte.class || c == short.class || c == Short.class || c == int.class || c == Integer.class || c == long.class || c == Long.class || c == float.class || c == Float.class || c == double.class || c == Double.class;
     }
 
-    public String getProtobufDefinition() {
-        return getProtobufDefinition(new StringBuilder()).toString();
+    public boolean isEnumType() {
+        return getElementJavaType().isEnumType();
     }
 
-    public StringBuilder getProtobufDefinition(StringBuilder stringBuilder) {
-        if ((javaType.isContainerType() || javaType.isCollectionLikeType()) && !javaType.isMapLikeType())
-            stringBuilder.append("repeated ");
-        else if (protobuf.required())
-            stringBuilder.append("required ");
-        else
-            stringBuilder.append("optional ");
+    public boolean isMessageType() {
         if (protobuf.type() != Protobuf.Type.DEFAULT)
-            stringBuilder.append(protobuf.type().protobufName);
+            return false;
+        return Protobuf.Type.getDefault(getElementJavaType().getRawClass()) == null;
+    }
+
+    public String getProtobufDefinition() {
+        try {
+            return getProtobufDefinition(new StringBuilder()).toString();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public Appendable getProtobufDefinition(Appendable appendable) throws IOException {
+        if (isRepeated())
+            appendable.append("repeated ");
+        else if (protobuf.required())
+            appendable.append("required ");
         else
-            stringBuilder.append(MessageDescription.getProtobufName(javaType));
-        stringBuilder.append(" ").append(protobufName).append(" = ").append(protobuf.value());
+            appendable.append("optional ");
+        if (protobuf.type() != Protobuf.Type.DEFAULT) {
+            appendable.append(protobuf.type().protobufName);
+        } else {
+            JavaType elementJavaType = getElementJavaType();
+            Protobuf.Type type = Protobuf.Type.getDefault(elementJavaType.getRawClass());
+            if (type != null)
+                appendable.append(type.protobufName);
+            else
+                appendable.append(MessageDescription.getProtobufName(elementJavaType));
+        }
+        appendable.append(" ").append(protobufName).append(" = ").append(String.valueOf(protobuf.value()));
         if (isPacked())
-            stringBuilder.append(" [packed=true]");
-        return stringBuilder;
+            appendable.append(" [packed=true]");
+        return appendable;
+    }
+
+    JavaType getElementJavaType() {
+        if (!javaType.isContainerType())
+            return javaType;
+        if (javaType.getRawClass() == byte[].class)
+            return javaType;
+        return javaType.containedType(0);
     }
 }

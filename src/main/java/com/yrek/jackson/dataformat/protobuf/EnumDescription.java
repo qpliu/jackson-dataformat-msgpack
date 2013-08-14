@@ -1,5 +1,6 @@
 package com.yrek.jackson.dataformat.protobuf;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -48,13 +49,17 @@ class EnumDescription {
     }
 
     public String getProtobufDefinition() {
-        return getProtobufDefinition(new StringBuilder()).toString();
+        try {
+            return getProtobufDefinition(new StringBuilder()).toString();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    public StringBuilder getProtobufDefinition(StringBuilder stringBuilder) {
-        stringBuilder.append("enum ").append(getName()).append(" {\n");
+    public Appendable getProtobufDefinition(Appendable appendable) throws IOException {
+        appendable.append("enum ").append(getName()).append(" {\n");
         for (Map.Entry<Integer,String> e : protobufNames.entrySet())
-            stringBuilder.append("  ").append(e.getValue()).append(" = ").append(e.getKey()).append(";\n");
-        return stringBuilder.append("}\n");
+            appendable.append("  ").append(e.getValue()).append(" = ").append(e.getKey().toString()).append(";\n");
+        return appendable.append("}\n");
     }
 }
