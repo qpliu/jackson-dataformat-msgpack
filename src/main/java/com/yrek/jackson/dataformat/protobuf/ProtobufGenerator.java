@@ -54,27 +54,27 @@ public class ProtobufGenerator extends JsonGenerator {
         public void startElement() throws IOException {
         }
 
+        public void writeKey(WireType wireType) throws IOException {
+            varint(wireType.getKey(fieldContext.getTag()));
+        }
+
         public void endElement() throws IOException {
         }
 
         public OutputContext endContext() throws IOException {
-            return this;
+            throw new IllegalStateException();
+        }
+
+        public void endParentElement() throws IOException {
+            throw new IllegalStateException();
         }
 
         public int zigzag(int i) {
             return (i << 1) ^ (i >> 31);
         }
 
-        public int unzigzag(int i) {
-            return (i&1) == 0 ? i >>> 1 : ~(i >>> 1);
-        }
-
         public long zigzag(long i) {
             return (i << 1) ^ (i >> 63);
-        }
-
-        public long unzigzag(long i) {
-            return (i&1) == 0 ? i >>> 1 : ~(i >>> 1);
         }
 
         public void varint(int i) throws IOException {
@@ -89,6 +89,10 @@ public class ProtobufGenerator extends JsonGenerator {
             }
         }
 
+        public void svarint(int i) throws IOException {
+            varint(zigzag(i));
+        }
+
         public void varint(long i) throws IOException {
             for (;;) {
                 int b128 = (int) (i&127);
@@ -101,11 +105,19 @@ public class ProtobufGenerator extends JsonGenerator {
             }
         }
 
+        public void svarint(long i) throws IOException {
+            varint(zigzag(i));
+        }
+
         public void fixed32(int i32) throws IOException {
             out().write(i32&255);
             out().write((i32>>8)&255);
             out().write((i32>>16)&255);
             out().write((i32>>24)&255);
+        }
+
+        public void sfixed32(int i32) throws IOException {
+            fixed32(zigzag(i32));
         }
 
         public void fixed32(float f) throws IOException {
@@ -123,23 +135,73 @@ public class ProtobufGenerator extends JsonGenerator {
             out().write((int) (i64>>56)&255);
         }
 
+        public void sfixed64(long i64) throws IOException {
+            fixed64(zigzag(i64));
+        }
+
         public void fixed64(double d) throws IOException {
             fixed64(Double.doubleToLongBits(d));
         }
     }
 
+    private static final OutputStream nullOutputStream = new OutputStream() {
+        public void write(int i) {}
+        public void write(byte[] b) {}
+        public void write(byte[] b, int i) {}
+        public void write(byte[] b, int offset, int count) {}
+        public void flush() {}
+        public void close() {}
+    };
+
+    private class IgnoredContext extends OutputContext {
+        private final OutputContext parent;
+
+        IgnoredContext(OutputContext parent, boolean isObject) {
+            super(nullOutputStream);
+            this.parent = parent;
+            _type = isObject ? TYPE_OBJECT : TYPE_ARRAY;
+        }
+
+        @Override
+        public JsonStreamContext getParent() {
+            return parent;
+        }
+
+        @Override
+        public void startElement() throws IOException {
+        }
+
+        @Override
+        public void writeKey(WireType wireType) throws IOException {
+        }
+
+        @Override
+        public void endElement() throws IOException {
+        }
+
+        @Override
+        public OutputContext endContext() throws IOException {
+            return parent;
+        }
+
+        @Override
+        public void endParentElement() throws IOException {
+        }
+    }
+
     private class RepeatedObjectContext extends OutputContext {
         private final OutputContext parent;
-        private final int key;
+        private final MessageDescription saveObjectContext;
+        private final MessageField saveFieldContext;
 
-        RepeatedObjectContext(OutputContext parent, int key) {
+        RepeatedObjectContext(OutputContext parent) {
             super(parent.out());
             this.parent = parent;
-            this.key = key;
+            this.saveObjectContext = objectContext;
+            this.saveFieldContext = fieldContext;
             _index = -1;
             _type = TYPE_ARRAY;
         }
-        //...
 
         @Override
         public JsonStreamContext getParent() {
@@ -149,7 +211,13 @@ public class ProtobufGenerator extends JsonGenerator {
         @Override
         public void startElement() throws IOException {
             _index++;
-            varint(key);
+            fieldContext = saveFieldContext;
+        }
+
+        @Override
+        public void endElement() throws IOException {
+            fieldContext = null;
+            objectContext = saveObjectContext;
         }
 
         @Override
@@ -157,22 +225,39 @@ public class ProtobufGenerator extends JsonGenerator {
             objectContext = null;
             return parent;
         }
+
+        @Override
+        public void endParentElement() throws IOException {
+            parent.endElement();
+        }
     }
 
     private class LengthDelimitedOutputContext extends OutputContext {
-        protected final OutputContext parent;
-        final MessageDescription saveObjectContext;
+        private final OutputContext parent;
+        private final MessageDescription saveObjectContext;
 
-        LengthDelimitedOutputContext(OutputContext parent) {
+        LengthDelimitedOutputContext(OutputContext parent, boolean isObject) {
             super(new ByteArrayOutputStream());
             this.parent = parent;
             this.saveObjectContext = objectContext;
             _index = -1;
+            _type = isObject ? TYPE_OBJECT : TYPE_ARRAY;
         }
 
         @Override
         public JsonStreamContext getParent() {
             return parent;
+        }
+
+        @Override
+        public void startElement() throws IOException {
+            _index++;
+        }
+
+        @Override
+        public void endElement() throws IOException {
+            objectContext = saveObjectContext;
+            fieldContext = null;
         }
 
         @Override
@@ -182,6 +267,27 @@ public class ProtobufGenerator extends JsonGenerator {
             out.writeTo(parent.out());
             return parent;
         }
+
+        @Override
+        public void endParentElement() throws IOException {
+            parent.endElement();
+        }
+    }
+
+    private class PackedOutputContext extends LengthDelimitedOutputContext {
+        PackedOutputContext(OutputContext parent) {
+            super(parent, false);
+        }
+
+        @Override
+        public void writeKey(WireType wireType) throws IOException {
+            switch (wireType) {
+            case Varint: case Fixed64: case Fixed32:
+                break;
+            default:
+                throw new IllegalArgumentException();
+            }
+        }
     }
 
     private IOContext ioContext;
@@ -190,6 +296,7 @@ public class ProtobufGenerator extends JsonGenerator {
 
     private OutputContext outputContext;
     private MessageDescription objectContext;
+    private MessageField fieldContext;
     private ProtobufSchema schema;
     private boolean closed;
 
@@ -301,7 +408,17 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeStartArray() throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null) {
+            outputContext = new IgnoredContext(outputContext, false);
+            return;
+        }
+        if (fieldContext.isPacked()) {
+            outputContext.startElement();
+            outputContext.writeKey(WireType.LengthDelimited);
+            outputContext = new PackedOutputContext(outputContext);
+            return;
+        }
+        outputContext = new RepeatedObjectContext(outputContext);
     }
 
     /**
@@ -314,7 +431,9 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeEndArray() throws IOException, JsonGenerationException {
-        //...
+        OutputContext childContext = outputContext;
+        outputContext = outputContext.endContext();
+        childContext.endParentElement();
     }
 
     /**
@@ -328,7 +447,15 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeStartObject() throws IOException, JsonGenerationException {
-        //...
+        if (outputContext.inRoot())
+            return;
+        if (fieldContext == null) {
+            outputContext = new IgnoredContext(outputContext, true);
+            return;
+        }
+        outputContext.startElement();
+        outputContext.writeKey(WireType.LengthDelimited);
+        outputContext = new LengthDelimitedOutputContext(outputContext, true);
     }
 
     /**
@@ -343,7 +470,11 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeEndObject() throws IOException, JsonGenerationException {
-        //...
+        if (outputContext.inRoot())
+            return;
+        OutputContext childContext = outputContext;
+        outputContext = outputContext.endContext();
+        childContext.endParentElement();
     }
 
     /**
@@ -357,7 +488,7 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeFieldName(String name) throws IOException, JsonGenerationException {
-        //...
+        fieldContext = objectContext.getMessageField(name);
     }
 
     /**
@@ -373,7 +504,7 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeFieldName(SerializableString name) throws IOException, JsonGenerationException {
-        //...
+        writeFieldName(name.getValue());
     }
 
     /**
@@ -385,8 +516,35 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeString(String text) throws IOException, JsonGenerationException {
-        //...
-        //... enums
+        if (fieldContext == null)
+            return;
+        EnumDescription enumDescription;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+            enumDescription = schema.getEnumDescription(fieldContext);
+            if (enumDescription != null) {
+                Integer value = enumDescription.getValue(text);
+                if (value != null) {
+                    outputContext.startElement();
+                    outputContext.writeKey(WireType.Varint);
+                    outputContext.varint(value);
+                    outputContext.endElement();
+                }
+                return;
+            }
+            /*FALLTHROUGH*/
+        case STRING:
+        case BYTES:
+            byte[] bytes = text.getBytes("UTF-8");
+            outputContext.startElement();
+            outputContext.writeKey(WireType.LengthDelimited);
+            outputContext.varint(bytes.length);
+            outputContext.out().write(bytes);
+            outputContext.endElement();
+            break;
+        default:
+            //... automatic conversions...
+        }
     }
 
     /**
@@ -412,8 +570,35 @@ public class ProtobufGenerator extends JsonGenerator {
      * if possible.
      */
     public void writeString(SerializableString text) throws IOException, JsonGenerationException {
-        //...
-        //... enums
+        if (fieldContext == null)
+            return;
+        EnumDescription enumDescription;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+            enumDescription = schema.getEnumDescription(fieldContext);
+            if (enumDescription != null) {
+                Integer value = enumDescription.getValue(text.getValue());
+                if (value != null) {
+                    outputContext.startElement();
+                    outputContext.writeKey(WireType.Varint);
+                    outputContext.varint(value);
+                    outputContext.endElement();
+                }
+                return;
+            }
+            /*FALLTHROUGH*/
+        case STRING:
+        case BYTES:
+            byte[] bytes = text.asUnquotedUTF8();
+            outputContext.startElement();
+            outputContext.writeKey(WireType.LengthDelimited);
+            outputContext.varint(bytes.length);
+            outputContext.out().write(bytes);
+            outputContext.endElement();
+            break;
+        default:
+            //... automatic conversions...
+        }
     }
 
     /**
@@ -576,7 +761,18 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeBinary(Base64Variant b64variant, byte[] data, int offset, int len) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+        case BYTES:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.LengthDelimited);
+            outputContext.varint(len);
+            outputContext.out().write(data, offset, len);
+            outputContext.endElement();
+            break;
+        }
     }
 
     /**
@@ -602,8 +798,7 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public int writeBinary(Base64Variant b64variant, InputStream data, int dataLength) throws IOException, JsonGenerationException {
-        //...
-        return 0;
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -615,7 +810,47 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeNumber(int v) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+        case INT32: case INT64: case UINT32: case UINT64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Varint);
+            outputContext.varint(v);
+            outputContext.endElement();
+            break;
+        case SINT32: case SINT64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Varint);
+            outputContext.svarint(v);
+            outputContext.endElement();
+            break;
+        case FIXED32:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed32);
+            outputContext.fixed32(v);
+            outputContext.endElement();
+            break;
+        case FIXED64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.fixed64(v);
+            outputContext.endElement();
+            break;
+        case SFIXED32:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed32);
+            outputContext.sfixed32(v);
+            outputContext.endElement();
+            break;
+        case SFIXED64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.sfixed64(v);
+            outputContext.endElement();
+            break;
+        }
     }
 
     /**
@@ -627,7 +862,38 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeNumber(long v) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+        case INT64: case UINT64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Varint);
+            outputContext.varint(v);
+            outputContext.endElement();
+            break;
+        case SINT64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Varint);
+            outputContext.svarint(v);
+            outputContext.endElement();
+            break;
+        case FIXED64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.fixed64(v);
+            outputContext.endElement();
+            break;
+        case SFIXED64:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.sfixed64(v);
+            outputContext.endElement();
+            break;
+        case INT32: case SINT32: case FIXED32: case SFIXED32:
+            writeNumber((int) v);
+            break;
+        }
     }
 
     /**
@@ -640,6 +906,7 @@ public class ProtobufGenerator extends JsonGenerator {
     @Override
     public void writeNumber(BigInteger v) throws IOException, JsonGenerationException {
         //...
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -651,7 +918,26 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeNumber(double d) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT: case DOUBLE:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.fixed64(d);
+            outputContext.endElement();
+            break;
+        case FLOAT:
+            writeNumber((float) d);
+            break;
+        case INT32: case INT64:
+        case UINT32: case UINT64:
+        case SINT32: case SINT64:
+        case FIXED32: case FIXED64:
+        case SFIXED32: case SFIXED64:
+            writeNumber((long) d);
+            break;
+        }
     }
 
     /**
@@ -663,7 +949,30 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeNumber(float f) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+        case FLOAT:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed32);
+            outputContext.fixed32(f);
+            outputContext.endElement();
+            break;
+        case DOUBLE:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Fixed64);
+            outputContext.fixed64((double) f);
+            outputContext.endElement();
+            break;
+        case INT32: case INT64:
+        case UINT32: case UINT64:
+        case SINT32: case SINT64:
+        case FIXED32: case FIXED64:
+        case SFIXED32: case SFIXED64:
+            writeNumber((long) f);
+            break;
+        }
     }
 
     /**
@@ -676,6 +985,7 @@ public class ProtobufGenerator extends JsonGenerator {
     @Override
     public void writeNumber(BigDecimal dec) throws IOException, JsonGenerationException {
         //...
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -709,7 +1019,16 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeBoolean(boolean state) throws IOException, JsonGenerationException {
-        //...
+        if (fieldContext == null)
+            return;
+        switch (fieldContext.getProtobufType()) {
+        case DEFAULT:
+            outputContext.startElement();
+            outputContext.writeKey(WireType.Varint);
+            outputContext.out().write(state ? 1 : 0);
+            outputContext.endElement();
+            break;
+        }
     }
 
     /**
@@ -721,7 +1040,6 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeNull() throws IOException, JsonGenerationException {
-        //...
     }
 
     /**

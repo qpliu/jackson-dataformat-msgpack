@@ -55,6 +55,6 @@ public class ProtobufFactory extends JsonFactory {
 
     @Override
     protected JsonGenerator _createUTF8Generator(OutputStream out, IOContext ctxt) throws IOException {
-        return null; //...
+        return new ProtobufGenerator(ctxt, objectCodec, out);
     }
 }

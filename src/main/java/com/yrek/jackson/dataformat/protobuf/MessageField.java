@@ -64,6 +64,10 @@ class MessageField {
         return Protobuf.Type.getDefault(getElementJavaType().getRawClass()) == null;
     }
 
+    public Protobuf.Type getProtobufType() {
+        return protobuf.type();
+    }
+
     public String getProtobufDefinition() {
         try {
             return getProtobufDefinition(new StringBuilder()).toString();
