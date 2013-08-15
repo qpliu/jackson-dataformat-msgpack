@@ -24,27 +24,38 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.yrek.jackson.dataformat.msgpack.MessagePackVersion;
 
 public class ProtobufGenerator extends JsonGenerator {
-
     private class OutputContext extends JsonStreamContext {
-        private OutputStream out;
+        private final OutputStream out;
+        protected final OutputContext parent;
+        private final MessageDescription saveObjectContext;
+        private final MessageField saveFieldContext;
+        private String currentName;
 
         OutputContext(OutputStream out) {
+            this(out, null, TYPE_ROOT);
+        }
+
+        OutputContext(OutputStream out, OutputContext parent, int type) {
             this.out = out;
-            _type = TYPE_ROOT;
+            this.parent = parent;
+            this.saveObjectContext = objectContext;
+            this.saveFieldContext = fieldContext;
+            _type = type;
+            _index = -1;
         }
 
         @Override
         public JsonStreamContext getParent() {
-            return null;
+            return parent;
         }
 
         public void setCurrentName(String currentName) throws JsonGenerationException {
-            throw new JsonGenerationException("writeFieldName not in object:"+currentName);
+            this.currentName = currentName;
         }
 
         @Override
         public String getCurrentName() {
-            return null;
+            return currentName;
         }
 
         public OutputStream out() {
@@ -52,6 +63,7 @@ public class ProtobufGenerator extends JsonGenerator {
         }
 
         public void startElement() throws IOException {
+            _index++;
         }
 
         public void writeKey(WireType wireType) throws IOException {
@@ -62,11 +74,13 @@ public class ProtobufGenerator extends JsonGenerator {
         }
 
         public OutputContext endContext() throws IOException {
-            throw new IllegalStateException();
+            objectContext = saveObjectContext;
+            fieldContext = saveFieldContext;
+            return parent;
         }
 
         public void endParentElement() throws IOException {
-            throw new IllegalStateException();
+            parent.endElement();
         }
 
         public int zigzag(int i) {
@@ -154,21 +168,8 @@ public class ProtobufGenerator extends JsonGenerator {
     };
 
     private class IgnoredContext extends OutputContext {
-        private final OutputContext parent;
-
         IgnoredContext(OutputContext parent, boolean isObject) {
-            super(nullOutputStream);
-            this.parent = parent;
-            _type = isObject ? TYPE_OBJECT : TYPE_ARRAY;
-        }
-
-        @Override
-        public JsonStreamContext getParent() {
-            return parent;
-        }
-
-        @Override
-        public void startElement() throws IOException {
+            super(nullOutputStream, parent, isObject ? TYPE_OBJECT : TYPE_ARRAY);
         }
 
         @Override
@@ -176,88 +177,25 @@ public class ProtobufGenerator extends JsonGenerator {
         }
 
         @Override
-        public void endElement() throws IOException {
-        }
-
-        @Override
-        public OutputContext endContext() throws IOException {
-            return parent;
-        }
-
-        @Override
         public void endParentElement() throws IOException {
         }
     }
 
-    private class RepeatedObjectContext extends OutputContext {
-        private final OutputContext parent;
-        private final MessageDescription saveObjectContext;
-        private final MessageField saveFieldContext;
-
-        RepeatedObjectContext(OutputContext parent) {
-            super(parent.out());
-            this.parent = parent;
-            this.saveObjectContext = objectContext;
-            this.saveFieldContext = fieldContext;
-            _index = -1;
-            _type = TYPE_ARRAY;
+    private class RootOutputContext extends OutputContext {
+        RootOutputContext(OutputContext parent) {
+            super(parent.out(), parent, TYPE_OBJECT);
         }
+    }
 
-        @Override
-        public JsonStreamContext getParent() {
-            return parent;
-        }
-
-        @Override
-        public void startElement() throws IOException {
-            _index++;
-            fieldContext = saveFieldContext;
-        }
-
-        @Override
-        public void endElement() throws IOException {
-            fieldContext = null;
-            objectContext = saveObjectContext;
-        }
-
-        @Override
-        public OutputContext endContext() throws IOException {
-            objectContext = null;
-            return parent;
-        }
-
-        @Override
-        public void endParentElement() throws IOException {
-            parent.endElement();
+    private class RepeatedOutputContext extends OutputContext {
+        RepeatedOutputContext(OutputContext parent) {
+            super(parent.out(), parent, TYPE_ARRAY);
         }
     }
 
     private class LengthDelimitedOutputContext extends OutputContext {
-        private final OutputContext parent;
-        private final MessageDescription saveObjectContext;
-
         LengthDelimitedOutputContext(OutputContext parent, boolean isObject) {
-            super(new ByteArrayOutputStream());
-            this.parent = parent;
-            this.saveObjectContext = objectContext;
-            _index = -1;
-            _type = isObject ? TYPE_OBJECT : TYPE_ARRAY;
-        }
-
-        @Override
-        public JsonStreamContext getParent() {
-            return parent;
-        }
-
-        @Override
-        public void startElement() throws IOException {
-            _index++;
-        }
-
-        @Override
-        public void endElement() throws IOException {
-            objectContext = saveObjectContext;
-            fieldContext = null;
+            super(new ByteArrayOutputStream(), parent, isObject ? TYPE_OBJECT : TYPE_ARRAY);
         }
 
         @Override
@@ -265,12 +203,7 @@ public class ProtobufGenerator extends JsonGenerator {
             ByteArrayOutputStream out = (ByteArrayOutputStream) out();
             parent.varint(out.size());
             out.writeTo(parent.out());
-            return parent;
-        }
-
-        @Override
-        public void endParentElement() throws IOException {
-            parent.endElement();
+            return super.endContext();
         }
     }
 
@@ -418,7 +351,7 @@ public class ProtobufGenerator extends JsonGenerator {
             outputContext = new PackedOutputContext(outputContext);
             return;
         }
-        outputContext = new RepeatedObjectContext(outputContext);
+        outputContext = new RepeatedOutputContext(outputContext);
     }
 
     /**
@@ -447,15 +380,23 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeStartObject() throws IOException, JsonGenerationException {
-        if (outputContext.inRoot())
+        if (outputContext.inRoot()) {
+            outputContext = new RootOutputContext(outputContext);
             return;
+        }
         if (fieldContext == null) {
+            outputContext = new IgnoredContext(outputContext, true);
+            return;
+        }
+        MessageDescription newObjectContext = schema.getMessageDescription(fieldContext);
+        if (newObjectContext == null) {
             outputContext = new IgnoredContext(outputContext, true);
             return;
         }
         outputContext.startElement();
         outputContext.writeKey(WireType.LengthDelimited);
         outputContext = new LengthDelimitedOutputContext(outputContext, true);
+        objectContext = newObjectContext;
     }
 
     /**
@@ -470,8 +411,6 @@ public class ProtobufGenerator extends JsonGenerator {
      */
     @Override
     public void writeEndObject() throws IOException, JsonGenerationException {
-        if (outputContext.inRoot())
-            return;
         OutputContext childContext = outputContext;
         outputContext = outputContext.endContext();
         childContext.endParentElement();
@@ -489,6 +428,7 @@ public class ProtobufGenerator extends JsonGenerator {
     @Override
     public void writeFieldName(String name) throws IOException, JsonGenerationException {
         fieldContext = objectContext.getMessageField(name);
+        outputContext.setCurrentName(name);
     }
 
     /**

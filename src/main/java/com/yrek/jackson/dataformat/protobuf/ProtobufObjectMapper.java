@@ -56,7 +56,7 @@ public class ProtobufObjectMapper extends ObjectMapper {
      */
     @Override
     public void writeValue(JsonGenerator jgen, Object value) throws IOException, JsonGenerationException, JsonMappingException {
-        super.writeValue(setRootContext(jgen, value), value);
+        super.writeValue(setRootContext(jgen, value, null, null, null), value);
     }
 
     /**
@@ -65,7 +65,7 @@ public class ProtobufObjectMapper extends ObjectMapper {
      */
     @Override
     public void writeValue(File resultFile, Object value) throws IOException, JsonGenerationException, JsonMappingException {
-        _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(resultFile, JsonEncoding.UTF8), value), value);
+        _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(resultFile, JsonEncoding.UTF8), value, null, null, null), value);
     }
 
     /**
@@ -81,7 +81,19 @@ public class ProtobufObjectMapper extends ObjectMapper {
      */
     @Override
     public void writeValue(OutputStream out, Object value) throws IOException, JsonGenerationException, JsonMappingException {
-        _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(out, JsonEncoding.UTF8), value), value);
+        writeValue(out, value, null, null);
+    }
+
+    public <T> void writeValue(OutputStream out, T value, TypeReference<T> typeReference) throws IOException, JsonGenerationException, JsonMappingException {
+        writeValue(out, value, typeReference, null);
+    }
+
+    public <T> void writeValue(OutputStream out, T value, ProtobufSchema schema) throws IOException, JsonGenerationException, JsonMappingException {
+        writeValue(out, value, null, schema);
+    }
+
+    public <T> void writeValue(OutputStream out, T value, TypeReference<T> typeReference, ProtobufSchema schema) throws IOException, JsonGenerationException, JsonMappingException {
+        _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(out, JsonEncoding.UTF8), value, null, typeReference, schema), value);
     }
 
     /**
@@ -122,11 +134,22 @@ public class ProtobufObjectMapper extends ObjectMapper {
      * Note: prior to version 2.1, throws clause included {@link IOException}; 2.1 removed it.
      */
     @Override
-    @SuppressWarnings("resource")
     public byte[] writeValueAsBytes(Object value) throws JsonProcessingException {
+        return writeValueAsBytes(value, null, null);
+    }
+
+    public <T> byte[] writeValueAsBytes(T value, TypeReference<T> typeReference) throws JsonProcessingException {
+        return writeValueAsBytes(value, typeReference, null);
+    }
+
+    public <T> byte[] writeValueAsBytes(T value, ProtobufSchema schema) throws JsonProcessingException {
+        return writeValueAsBytes(value, null, schema);
+    }
+
+    public <T> byte[] writeValueAsBytes(T value, TypeReference<T> typeReference, ProtobufSchema schema) throws JsonProcessingException {
         ByteArrayBuilder bb = new ByteArrayBuilder(_jsonFactory._getBufferRecycler());
         try {
-            _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(bb, JsonEncoding.UTF8), value), value);
+            _configAndWriteValue(setRootContext(_jsonFactory.createGenerator(bb, JsonEncoding.UTF8), value, null, typeReference, schema), value);
         } catch (JsonProcessingException e) { // to support [JACKSON-758]
             throw e;
         } catch (IOException e) { // shouldn't really happen, but is declared as possibility so:
@@ -137,10 +160,20 @@ public class ProtobufObjectMapper extends ObjectMapper {
         return result;
     }
 
-    private JsonGenerator setRootContext(JsonGenerator jgen, Object value) throws JsonMappingException {
+    private <T> JsonGenerator setRootContext(JsonGenerator jgen, T value, Class<T> cl, TypeReference<T> typeReference, ProtobufSchema schema) throws JsonMappingException {
         if (jgen instanceof ProtobufGenerator) {
-            ProtobufSchema schema = collectTypes(value.getClass());
-            ((ProtobufGenerator) jgen).setObjectContext(schema.getMessageDescription(getSerializationConfig().constructType(value.getClass())), schema);;
+            JavaType javaType;
+            if (typeReference != null)
+                javaType = getSerializationConfig().constructType(typeReference);
+            else if (cl != null)
+                javaType = getSerializationConfig().constructType(cl);
+            else
+                javaType = getSerializationConfig().constructType(value.getClass());
+            if (schema == null) {
+                schema = new ProtobufSchema(getSerializationConfig());
+                collectType(schema, javaType);
+            }
+            ((ProtobufGenerator) jgen).setObjectContext(schema.getMessageDescription(javaType), schema);
         }
         return jgen;
     }
