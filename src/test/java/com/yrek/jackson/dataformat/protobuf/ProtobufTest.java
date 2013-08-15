@@ -60,7 +60,6 @@ public class ProtobufTest {
 
     @Test
     public void testExamplesSerialization() throws Exception {
-try{
         Test1 test1 = new Test1();
         test1.a = 150;
         Assert.assertArrayEquals(new byte[] { 0x08, (byte) 0x96, 0x01 }, protobufObjectMapper.writeValueAsBytes(test1));
@@ -77,7 +76,6 @@ try{
         Test4 test4 = new Test4();
         test4.d = new int[] { 3, 270, 86942 };
         Assert.assertArrayEquals(new byte[] { 0x22, 0x06, 0x03, (byte) 0x8e, 0x02, (byte) 0x9e, (byte) 0xa7, 0x05 }, protobufObjectMapper.writeValueAsBytes(test4));
-}catch(Exception e){e.printStackTrace();}
     }
 
     public static class TestRepeated {
