@@ -18,6 +18,8 @@ import com.fasterxml.jackson.core.ObjectCodec;
 import com.fasterxml.jackson.core.io.IOContext;
 
 public class ProtobufFactory extends JsonFactory {
+    private static final long serialVersionUID = 0L;
+
     private ObjectCodec objectCodec;
 
     public ProtobufFactory() {

@@ -3,6 +3,7 @@ package com.yrek.jackson.dataformat.msgpack;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
@@ -17,7 +18,7 @@ public class MessagePackTest {
 
     @Test
     public void testSerializeHashMap() throws Exception {
-        HashMap data = new HashMap();
+        HashMap<String,Object> data = new HashMap<String,Object>();
         data.put("compact", true);
         data.put("schema", 0);
         Assert.assertEquals("{\"schema\":0,\"compact\":true}",jsonMapper.writeValueAsString(data));
@@ -50,7 +51,7 @@ public class MessagePackTest {
 
     @Test
     public void testDeserializeHashMap() throws Exception {
-        HashMap map = msgPackMapper.readValue(new byte[] { (byte) 0x82, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc2, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x2d }, HashMap.class);
+        HashMap<String,Object> map = msgPackMapper.readValue(new byte[] { (byte) 0x82, (byte) 0xa7, 0x63, 0x6f, 0x6d, 0x70, 0x61, 0x63, 0x74, (byte) 0xc2, (byte) 0xa6, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x2d }, new TypeReference<HashMap<String,Object>>() {});
         Assert.assertEquals(2, map.size());
         Assert.assertEquals(Integer.valueOf(45), map.get("schema"));
         Assert.assertEquals(Boolean.FALSE, map.get("compact"));

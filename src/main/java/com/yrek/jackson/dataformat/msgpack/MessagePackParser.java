@@ -113,7 +113,7 @@ public class MessagePackParser extends JsonParser {
                 return JsonToken.VALUE_TRUE;
             case 0xca:
                 _valueType = ValueType.FLOAT;
-                _floatValue = Float.intBitsToFloat((int) read32());
+                _floatValue = Float.intBitsToFloat(read32());
                 return JsonToken.VALUE_NUMBER_FLOAT;
             case 0xcb:
                 _valueType = ValueType.DOUBLE;
@@ -297,6 +297,7 @@ public class MessagePackParser extends JsonParser {
         }
 
         @Override
+        @SuppressWarnings("fallthrough")
         JsonToken nextToken() throws IOException, JsonParseException {
             if (getEntryCount() >= _size)
                 return super.nextToken();
@@ -318,7 +319,7 @@ public class MessagePackParser extends JsonParser {
                         return JsonToken.FIELD_NAME;
                     }
                 }
-                // FALLTHROUGH
+                /*FALLTHROUGH*/
             default:
                 throw _constructError("Unexpected key type");
             }

@@ -28,6 +28,7 @@ public class MessagePackBeanSerializerModifier extends BeanSerializerModifier {
      * methods; mostly for JDK types like {@link java.util.Iterator} and such.
      */
     @Override
+    @SuppressWarnings("unchecked")
     public JsonSerializer<?> modifySerializer(SerializationConfig config, BeanDescription beanDesc, final JsonSerializer<?> serializer) {
         return new ModifiedJsonSerializer(beanDesc.getType(), serializer);
     }

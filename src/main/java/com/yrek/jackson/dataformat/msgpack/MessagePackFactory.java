@@ -18,6 +18,8 @@ import com.fasterxml.jackson.core.ObjectCodec;
 import com.fasterxml.jackson.core.io.IOContext;
 
 public class MessagePackFactory extends JsonFactory {
+    private static final long serialVersionUID = 0L;
+
     public static final String FORMAT_NAME = "MessagePack";
 
     public enum Feature implements MessagePackFeature.Feature {

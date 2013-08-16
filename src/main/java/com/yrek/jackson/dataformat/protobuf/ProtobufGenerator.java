@@ -455,6 +455,7 @@ public class ProtobufGenerator extends JsonGenerator {
      * escaped as required by JSON specification.
      */
     @Override
+    @SuppressWarnings("fallthrough")
     public void writeString(String text) throws IOException, JsonGenerationException {
         if (fieldContext == null)
             return;
@@ -509,6 +510,7 @@ public class ProtobufGenerator extends JsonGenerator {
      * sub-classes should override it with more efficient implementation
      * if possible.
      */
+    @SuppressWarnings("fallthrough")
     public void writeString(SerializableString text) throws IOException, JsonGenerationException {
         if (fieldContext == null)
             return;
