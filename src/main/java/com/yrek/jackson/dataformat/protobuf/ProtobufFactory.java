@@ -40,7 +40,7 @@ public class ProtobufFactory extends JsonFactory {
 
     @Override
     protected JsonParser _createParser(InputStream in, IOContext ctxt) throws IOException, JsonParseException {
-        return null; //...
+        return new ProtobufParser(ctxt, _objectCodec, in);
     }
 
     @Override

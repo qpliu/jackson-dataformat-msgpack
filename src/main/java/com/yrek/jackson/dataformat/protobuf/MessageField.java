@@ -58,6 +58,11 @@ class MessageField {
         return getElementJavaType().isEnumType();
     }
 
+    public boolean isBoolean() {
+        Class<?> c = getElementJavaType().getRawClass();
+        return c == boolean.class || c == Boolean.class;
+    }
+
     public boolean isMessageType() {
         if (protobuf.type() != Protobuf.Type.DEFAULT)
             return false;
