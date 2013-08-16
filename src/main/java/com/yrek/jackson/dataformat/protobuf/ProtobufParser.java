@@ -89,10 +89,10 @@ public class ProtobufParser extends JsonParser {
     }
 
     private class InputContext extends JsonStreamContext {
-        private final InputStream in;
-        private final InputContext parent;
-        private final MessageDescription objectContext;
-        private final MessageField fieldContext;
+        protected final InputStream in;
+        protected final InputContext parent;
+        protected final MessageDescription objectContext;
+        protected final MessageField fieldContext;
         protected String currentName = null;
         protected JsonToken endToken = null;
         protected InputContext nextInputContext;
@@ -101,6 +101,7 @@ public class ProtobufParser extends JsonParser {
         protected long integralValue;
         protected float floatValue;
         protected double doubleValue;
+        protected boolean floatValueIsDouble;
         protected String stringValue;
         protected byte[] bytesValue;
         protected InputContext fieldInputContext;
@@ -130,6 +131,14 @@ public class ProtobufParser extends JsonParser {
             return currentName;
         }
 
+        public long getTokenLocation() {
+            return -1;
+        }
+
+        public long getCurrentLocation() {
+            return -1;
+        }
+
         public void setCurrentName(String currentName) {
             this.currentName = currentName;
         }
@@ -150,6 +159,8 @@ public class ProtobufParser extends JsonParser {
                 nextInputContext = fieldInputContext;
                 return t;
             }
+            stringValue = null;
+            bytesValue = null;
             if (endToken == null) {
                 if (inArray())
                     endToken = JsonToken.END_ARRAY;
@@ -189,9 +200,9 @@ public class ProtobufParser extends JsonParser {
                 fieldInputContext = new PackedInputContext(this, (int) varint(), messageField);
                 return JsonToken.FIELD_NAME;
             }
-            if (messageField.isRepeated()) {
+            if (!inRepeating() && messageField.isRepeated()) {
                 fieldValueToken = JsonToken.START_ARRAY;
-                fieldInputContext = new RepeatedInputContext(this, messageField);
+                fieldInputContext = new RepeatedInputContext(this, objectContext, messageField);
                 return JsonToken.FIELD_NAME;
             }
             if (wireType == WireType.LengthDelimited && messageField.isMessageType()) {
@@ -202,10 +213,16 @@ public class ProtobufParser extends JsonParser {
                     return null;
                 }
                 fieldValueToken = JsonToken.START_OBJECT;
-                fieldInputContext = new LengthDelimitedInputContext(this, (int) varint(), messageDescription, messageField);
+                fieldInputContext = new LengthDelimitedInputContext(this, (int) varint(), messageDescription, null);
                 return JsonToken.FIELD_NAME;
             }
             varint();
+            return readElement(wireType, messageField);
+        }
+
+        @SuppressWarnings("fallthrough")
+        protected JsonToken readElement(WireType wireType, MessageField messageField) throws IOException {
+            fieldInputContext = this;
             switch (wireType) {
             case Varint:
                 integralValue = varint();
@@ -229,11 +246,13 @@ public class ProtobufParser extends JsonParser {
                 }
                 floatValue = (float) integralValue;
                 doubleValue = (double) integralValue;
+                floatValueIsDouble = false;
                 break;
             case Fixed64:
                 integralValue = fixed64();
                 floatValue = (float) integralValue;
                 doubleValue = (double) integralValue;
+                floatValueIsDouble = false;
                 fieldValueToken = JsonToken.VALUE_NUMBER_INT;
                 switch (messageField.getProtobufType()) {
                 case SFIXED64:
@@ -241,7 +260,10 @@ public class ProtobufParser extends JsonParser {
                     floatValue = (float) integralValue;
                     doubleValue = (double) integralValue;
                     break;
-                case DOUBLE: case FLOAT:
+                case DOUBLE:
+                    floatValueIsDouble = true;
+                    /*FALLTHROUGH*/
+                case FLOAT:
                     fieldValueToken = JsonToken.VALUE_NUMBER_FLOAT;
                     doubleValue = Double.longBitsToDouble(integralValue);
                     floatValue = (float) doubleValue;
@@ -260,6 +282,7 @@ public class ProtobufParser extends JsonParser {
                 integralValue = fixed32();
                 floatValue = (float) integralValue;
                 doubleValue = (double) integralValue;
+                floatValueIsDouble = false;
                 fieldValueToken = JsonToken.VALUE_NUMBER_INT;
                 switch (messageField.getProtobufType()) {
                 case SFIXED32:
@@ -277,6 +300,10 @@ public class ProtobufParser extends JsonParser {
                 break;
             }
             return JsonToken.FIELD_NAME;
+        }
+
+        protected boolean inRepeating() {
+            return false;
         }
 
         protected void skipValue(WireType wireType) throws IOException {
@@ -318,15 +345,11 @@ public class ProtobufParser extends JsonParser {
                 int b = in.read();
                 if (b < 0)
                     throw _constructError("Unexpected EOF");
-                n |= b&127;
+                n |= (long) (b&127) << (long) (i*7);
                 if ((b&128) == 0)
                     return n;
             }
             throw _constructError("varint overflow");
-        }
-
-        public long svarint() throws IOException {
-            return unzigzag(varint());
         }
 
         public long fixed64() throws IOException {
@@ -340,14 +363,6 @@ public class ProtobufParser extends JsonParser {
             return n;
         }
 
-        public long sfixed64() throws IOException {
-            return unzigzag(fixed64());
-        }
-
-        public double double64() throws IOException {
-            return Double.longBitsToDouble(fixed64());
-        }
-
         public int fixed32() throws IOException {
             int n = 0;
             for (int i = 0; i < 4; i++) {
@@ -359,44 +374,60 @@ public class ProtobufParser extends JsonParser {
             return n;
         }
 
-        public int sfixed32() throws IOException {
-            return unzigzag(fixed32());
-        }
-
-        public float float32() throws IOException {
-            return Float.intBitsToFloat(fixed32());
-        }
-
         public long unzigzag(long n) {
-            return (n&1) == 0 ? n>>>1 : ~(n>>>1);
-        }
-
-        public int unzigzag(int n) {
             return (n&1) == 0 ? n>>>1 : ~(n>>>1);
         }
     }
 
     private class RepeatedInputContext extends InputContext {
-        RepeatedInputContext(InputContext parent, MessageField fieldContext) {
-            super(parent.in(), parent, null, fieldContext, TYPE_ARRAY);
+        RepeatedInputContext(InputContext parent, MessageDescription objectContext, MessageField fieldContext) {
+            super(parent.in(), parent, objectContext, fieldContext, TYPE_ARRAY);
         }
-        //...
+
+        @Override
+        protected JsonToken readElement() throws IOException {
+            long key = peekVarint();
+            if (fieldContext.getTag() != (int) (key>>>3)) {
+                nextInputContext = parent;
+                return JsonToken.END_ARRAY;
+            }
+            super.readElement();
+            JsonToken t = fieldValueToken;
+            fieldValueToken = null;
+            nextInputContext = fieldInputContext;
+            return t;
+        }
+
+        @Override
+        protected boolean inRepeating() {
+            return true;
+        }
     }
 
     private class LengthDelimitedInputContext extends InputContext {
         LengthDelimitedInputContext(InputContext parent, int length, MessageDescription objectContext, MessageField fieldContext) {
-            super(new LimitedInputStream(parent.in(), length), parent, objectContext, fieldContext, fieldContext.isMessageType() ? TYPE_OBJECT : TYPE_ARRAY);
+            super(new LimitedInputStream(parent.in(), length), parent, objectContext, fieldContext, objectContext != null ? TYPE_OBJECT : TYPE_ARRAY);
         }
-        //...
     }
 
     private class PackedInputContext extends LengthDelimitedInputContext {
+        private final WireType wireType;
+
         PackedInputContext(InputContext parent, int limit, MessageField fieldContext) {
             super(parent, limit, null, fieldContext);
             if (!fieldContext.isPacked())
                 throw new IllegalArgumentException();
+            this.wireType = fieldContext.packedWireType();
         }
-        //...
+
+        @Override
+        protected JsonToken readElement() throws IOException {
+            readElement(wireType, fieldContext);
+            JsonToken t = fieldValueToken;
+            fieldValueToken = null;
+            assert fieldInputContext == this;
+            return t;
+        }
     }
 
     private IOContext ioContext;
@@ -418,7 +449,7 @@ public class ProtobufParser extends JsonParser {
         this.inputContext = new InputContext(inputStream, objectContext);
     }
 
-    public ProtobufParser(IOContext ioContext, ObjectCodec objectCodec, InputStream in) {
+    public ProtobufParser(IOContext ioContext, ObjectCodec objectCodec, InputStream inputStream) {
         this.ioContext = ioContext;
         this.objectCodec = objectCodec;
         this.inputStream = inputStream;
@@ -657,8 +688,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public JsonLocation getTokenLocation() {
-        //... return new JsonLocation(_ioContext.getSourceReference(), _currentTokenLocation, -1, 0, 0);
-        return null;
+        return new JsonLocation(ioContext.getSourceReference(), inputContext.getTokenLocation(), -1, -1, -1);
     }
 
     /**
@@ -667,8 +697,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public JsonLocation getCurrentLocation() {
-        //... return new JsonLocation(_ioContext.getSourceReference(), _currentInputCount, -1, 0, 0);
-        return null;
+        return new JsonLocation(ioContext.getSourceReference(), inputContext.getCurrentLocation(), -1, 0, 0);
     }
 
     /**
@@ -729,7 +758,16 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public String getText() throws IOException, JsonParseException {
-        //...
+        if (inputContext.stringValue != null)
+            return inputContext.stringValue;
+        if (inputContext.bytesValue != null)
+            return new String(inputContext.bytesValue, "UTF-8");
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_FLOAT)
+            return String.valueOf(inputContext.doubleValue);
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_INT)
+            return String.valueOf(inputContext.integralValue);
+        if (inputContext.fieldValueToken != null)
+            return inputContext.fieldValueToken.toString();
         return null;
     }
 
@@ -819,8 +857,11 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public Number getNumberValue() throws IOException, JsonParseException {
-        //...
-        return null;
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_FLOAT)
+            return inputContext.floatValueIsDouble ? Double.valueOf(inputContext.doubleValue) : Float.valueOf(inputContext.floatValue);
+        if (inputContext.integralValue > Integer.MAX_VALUE || inputContext.integralValue < Integer.MIN_VALUE)
+            return Long.valueOf(inputContext.integralValue);
+        return Integer.valueOf((int) inputContext.integralValue);
     }
 
     /**
@@ -831,8 +872,11 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public JsonParser.NumberType getNumberType() throws IOException, JsonParseException {
-        //...
-        return null;
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_FLOAT)
+            return inputContext.floatValueIsDouble ? JsonParser.NumberType.DOUBLE : JsonParser.NumberType.FLOAT;
+        if (inputContext.integralValue > Integer.MAX_VALUE || inputContext.integralValue < Integer.MIN_VALUE)
+            return JsonParser.NumberType.LONG;
+        return JsonParser.NumberType.INT;
     }
 
     /**
@@ -850,8 +894,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public int getIntValue() throws IOException, JsonParseException {
-        //...
-        return 0;
+        return (int) inputContext.integralValue;
     }
 
     /**
@@ -869,8 +912,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public long getLongValue() throws IOException, JsonParseException {
-        //...
-        return 0;
+        return inputContext.integralValue;
     }
 
     /**
@@ -884,8 +926,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public BigInteger getBigIntegerValue() throws IOException, JsonParseException {
-        //...
-        return null;
+        return BigInteger.valueOf(inputContext.integralValue);
     }
 
     /**
@@ -903,8 +944,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public float getFloatValue() throws IOException, JsonParseException {
-        //...
-        return 0.0f;
+        return inputContext.floatValue;
     }
 
     /**
@@ -922,8 +962,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public double getDoubleValue() throws IOException, JsonParseException {
-        //...
-        return 0.0;
+        return inputContext.doubleValue;
     }
 
     /**
@@ -934,8 +973,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public BigDecimal getDecimalValue() throws IOException, JsonParseException {
-        //...
-        return null;
+        return BigDecimal.valueOf(inputContext.doubleValue);
     }
 
     /**
@@ -976,8 +1014,7 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public byte[] getBinaryValue(Base64Variant b64variant) throws IOException, JsonParseException {
-        //...
-        return null;
+        return inputContext.bytesValue;
     }
 
     /**
@@ -993,7 +1030,16 @@ public class ProtobufParser extends JsonParser {
      */
     @Override
     public String getValueAsString(String defaultValue) throws IOException, JsonParseException {
-        //...
+        if (inputContext.stringValue != null)
+            return inputContext.stringValue;
+        if (inputContext.bytesValue != null) {
+            inputContext.stringValue = new String(inputContext.bytesValue, "UTF-8");
+            return inputContext.stringValue;
+        }
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_FLOAT)
+            return String.valueOf(inputContext.doubleValue);
+        if (inputContext.fieldValueToken == JsonToken.VALUE_NUMBER_INT)
+            return String.valueOf(inputContext.integralValue);
         return defaultValue;
     }
 }

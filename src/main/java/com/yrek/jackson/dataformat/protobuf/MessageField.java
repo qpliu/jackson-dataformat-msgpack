@@ -54,6 +54,30 @@ class MessageField {
         return c == boolean.class || c == Boolean.class || c == byte.class || c == Byte.class || c == short.class || c == Short.class || c == int.class || c == Integer.class || c == long.class || c == Long.class || c == float.class || c == Float.class || c == double.class || c == Double.class;
     }
 
+    public WireType packedWireType() {
+        if (!isPacked())
+            throw new IllegalStateException();
+        switch (protobuf.type()) {
+        case DOUBLE: case FIXED64: case SFIXED64:
+            return WireType.Fixed64;
+        case FLOAT: case FIXED32: case SFIXED32:
+            return WireType.Fixed32;
+        case DEFAULT:
+            break;
+        default:
+            return WireType.Varint;
+        }
+        JavaType elementType = javaType.containedType(0);
+        if (elementType.isEnumType())
+            return WireType.Varint;
+        Class<?> c = elementType.getRawClass();
+        if (c == float.class || c == Float.class)
+            return WireType.Fixed32;
+        if (c == double.class || c == Double.class)
+            return WireType.Fixed64;
+        return WireType.Varint;
+    }
+
     public boolean isEnumType() {
         return getElementJavaType().isEnumType();
     }

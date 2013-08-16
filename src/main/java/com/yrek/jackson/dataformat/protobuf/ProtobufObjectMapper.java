@@ -1,6 +1,7 @@
 package com.yrek.jackson.dataformat.protobuf;
 
 import java.io.File;
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
@@ -36,18 +37,42 @@ public class ProtobufObjectMapper extends ObjectMapper {
     public Version version() {
         return MessagePackVersion.VERSION;
     }
-    
+
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(InputStream src, Class<T> cl, ProtobufSchema schema) throws IOException, JsonParseException, JsonMappingException {
+        JavaType javaType = getDeserializationConfig().constructType(cl);
+        return (T) super._readValue(getDeserializationConfig(), setRootContext(_jsonFactory.createParser(src), javaType, schema), javaType);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(InputStream src, TypeReference<T> typeReference, ProtobufSchema schema) throws IOException, JsonParseException, JsonMappingException {
+        JavaType javaType = getDeserializationConfig().constructType(typeReference);
+        return (T) super._readValue(getDeserializationConfig(), setRootContext(_jsonFactory.createParser(src), javaType, schema), javaType);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(byte[] src, Class<T> cl, ProtobufSchema schema) throws IOException, JsonParseException, JsonMappingException {
+        JavaType javaType = getDeserializationConfig().constructType(cl);
+        return (T) super._readValue(getDeserializationConfig(), setRootContext(_jsonFactory.createParser(src), javaType, schema), javaType);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T readValue(byte[] src, TypeReference<T> typeReference, ProtobufSchema schema) throws IOException, JsonParseException, JsonMappingException {
+        JavaType javaType = getDeserializationConfig().constructType(typeReference);
+        return (T) super._readValue(getDeserializationConfig(), setRootContext(_jsonFactory.createParser(src), javaType, schema), javaType);
+    }
+
     /**
      * Actual implementation of value reading+binding operation.
      */
     @Override
     protected Object _readValue(DeserializationConfig cfg, JsonParser jp, JavaType valueType) throws IOException, JsonParseException, JsonMappingException {
-        return super._readValue(cfg, setRootContext(jp, valueType), valueType);
+        return super._readValue(cfg, setRootContext(jp, valueType, null), valueType);
     }
     
     @Override
     protected Object _readMapAndClose(JsonParser jp, JavaType valueType) throws IOException, JsonParseException, JsonMappingException {
-        return super._readMapAndClose(setRootContext(jp, valueType), valueType);
+        return super._readMapAndClose(setRootContext(jp, valueType, null), valueType);
     }
 
     /**
@@ -178,13 +203,14 @@ public class ProtobufObjectMapper extends ObjectMapper {
         return jgen;
     }
 
-    private JsonParser setRootContext(JsonParser jp, JavaType javaType) throws JsonMappingException {
-        /*
+    private JsonParser setRootContext(JsonParser jp, JavaType javaType, ProtobufSchema schema) throws JsonMappingException {
         if (jp instanceof ProtobufParser) {
-            ProtobufSchema schema = collectTypes(javaType);
-            ((ProtobufParser) jp).setObjectContext(schema.getMessageDescription(javaType), schema);
+            if (schema == null) {
+                schema = new ProtobufSchema(getSerializationConfig());
+                collectType(schema, javaType);
+            }
+            ((ProtobufParser) jp).initContext(schema.getMessageDescription(javaType), schema);
         }
-        */
         return jp;
     }
 

@@ -78,6 +78,22 @@ public class ProtobufTest {
         Assert.assertArrayEquals(new byte[] { 0x22, 0x06, 0x03, (byte) 0x8e, 0x02, (byte) 0x9e, (byte) 0xa7, 0x05 }, protobufObjectMapper.writeValueAsBytes(test4));
     }
 
+    @Test
+    public void testExamplesDeserialization() throws Exception {
+        Test1 test1 = protobufObjectMapper.readValue(new byte[] { 0x08, (byte) 0x96, 0x01 }, Test1.class);
+        Assert.assertEquals(150, test1.a);
+
+        Test2 test2 = protobufObjectMapper.readValue(new byte[] { 0x12, 0x07, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67 }, Test2.class);
+        Assert.assertEquals("testing", test2.b);
+
+        Test3 test3 = protobufObjectMapper.readValue(new byte[] { 0x1a, 0x03, 0x08, (byte) 0x96, 0x01 }, Test3.class);
+        Assert.assertNotNull(test3.c);
+        Assert.assertEquals(150, test3.c.a);
+
+        Test4 test4 = protobufObjectMapper.readValue(new byte[] { 0x22, 0x06, 0x03, (byte) 0x8e, 0x02, (byte) 0x9e, (byte) 0xa7, 0x05 }, Test4.class);
+        Assert.assertArrayEquals(new int[] { 3, 270, 86942 }, test4.d);
+    }
+
     public static class TestRepeated {
         @Protobuf(1) public String[] a;
         @Protobuf(2) public EnumExample[] b;
@@ -120,5 +136,38 @@ public class ProtobufTest {
             0x20, // varint, field number 4
             0x01, // true
         }, protobufObjectMapper.writeValueAsBytes(data));
+
+        TestRepeated data2 = protobufObjectMapper.readValue(new byte[] {
+            0x0a, // length-delimited, field number 1
+            0x01, // length=1
+            0x31, // "1"
+            0x12, // length-delimited, field number 2
+            0x03, // length=3
+            0x02, // 2=EnumExample.B
+            0x03, // 3=EnumExample.C
+            0x01, // 2=EnumExample.A
+            0x1a, // length-delimited, field number 3
+            0x02, // length=2
+            0x08, // varint, field number 1
+            0x05, // 5
+            0x1a, // length-delimited, field number 3
+            0x02, // length=2
+            0x08, // varint, field number 1
+            0x06, // 6
+            0x1a, // length-delimited, field number 3
+            0x02, // length=2
+            0x08, // varint, field number 1
+            0x07, // 7
+            0x20, // varint, field number 4
+            0x01, // true
+        }, TestRepeated.class);
+        Assert.assertArrayEquals(new String[] { "1" }, data2.a);
+        Assert.assertArrayEquals(new EnumExample[] { EnumExample.B, EnumExample.C, EnumExample.A }, data2.b);
+        Assert.assertNotNull(data2.c);
+        Assert.assertEquals(3, data2.c.length);
+        Assert.assertEquals(5, data2.c[0].a);
+        Assert.assertEquals(6, data2.c[1].a);
+        Assert.assertEquals(7, data2.c[2].a);
+        Assert.assertEquals(true, data2.d);
     }
 }
