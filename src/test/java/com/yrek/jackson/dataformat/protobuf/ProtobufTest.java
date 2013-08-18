@@ -239,4 +239,24 @@ public class ProtobufTest {
         Assert.assertEquals(7, data2.c[2].a);
         Assert.assertEquals(true, data2.d);
     }
+
+    public static class OutOfOrder {
+        @Protobuf(16) public String a;
+        @Protobuf(value=11, type=Protobuf.Type.SINT32) public int b;
+        @Protobuf(10) public boolean c;
+    }
+
+    @Test
+    public void testOutOfOrder() throws Exception {
+        OutOfOrder data = new OutOfOrder();
+        data.a = "data";
+        data.b = -2;
+        data.c = true;
+        Assert.assertArrayEquals(new byte[] {
+            0x50, 0x1, // varint, field number=10, true
+            0x58, 0x3, // varint, field number=11, -2
+            (byte) 0x82, 0x1, 0x4, // length-delimited, field number=16, length=4
+            0x64, 0x61, 0x74, 0x61, // "data"
+        }, protobufObjectMapper.writeValueAsBytes(data));
+    }
 }

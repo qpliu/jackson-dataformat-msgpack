@@ -31,6 +31,7 @@ public class ProtobufObjectMapper extends ObjectMapper {
 
     public ProtobufObjectMapper(ProtobufFactory protobufFactory) {
         super(protobufFactory);
+        _serializerFactory = _serializerFactory.withSerializerModifier(new ProtobufBeanSerializerModifier());
     }
 
     @Override
