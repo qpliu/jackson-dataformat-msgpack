@@ -1,5 +1,8 @@
 package com.yrek.jackson.dataformat.protobuf;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -25,13 +28,79 @@ public class ProtobufTest {
 
     public static class MessageExample<T,U> {
         @Protobuf(1) public byte[] binary;
-        @Protobuf(2) public T[] ts;
+        @Protobuf(2) public List<T> ts;
         @Protobuf(3) public U[] us;
     }
 
     @Test
     public void testSchema() throws Exception {
         Assert.assertEquals("enum EnumExample {\n  A = 1;\n  B = 2;\n  C = 3;\n}\nmessage MessageExampleEnumExampleDataExample {\n  optional bytes binary = 1;\n  repeated EnumExample ts = 2 [packed=true];\n  repeated DataExample us = 3;\n}\nmessage DataExample {\n  optional int32 data = 1;\n  optional string description = 2;\n  repeated float floats = 3 [packed=true];\n}\n", protobufObjectMapper.collectTypes(new TypeReference<MessageExample<EnumExample,DataExample>>() {}).getProtobufDefinition());
+    }
+
+    @Test
+    public void testSerialization() throws Exception {
+        MessageExample<EnumExample,DataExample> data = new MessageExample<EnumExample,DataExample>();
+        data.binary = new byte[] { 0, 1, 2 };
+        data.ts = new ArrayList<EnumExample>();
+        data.ts.add(EnumExample.C);
+        data.ts.add(EnumExample.A);
+        data.us = new DataExample[] { new DataExample() };
+        data.us[0].data = 1;
+        data.us[0].description = "a";
+        data.us[0].floats = new float[] { 0.0f };
+        Assert.assertEquals("{\"binary\":\"AAEC\",\"ts\":[\"C\",\"A\"],\"us\":[{\"data\":1,\"description\":\"a\",\"floats\":[0.0]}]}",jsonMapper.writeValueAsString(data));
+        Assert.assertArrayEquals(new byte[] {
+            0x0a, // length-delimited, field number 1
+            0x03, // length=3
+            0x00, 0x01, 0x02,
+            0x12, // length-delimited, field number 2
+            0x02, // length=2
+            0x03, // C
+            0x01, // A
+            0x1a, // length-delimited, field number 3
+            0x0b, // length=11
+            0x08, // varint, field number 1
+            0x01, // 1
+            0x12, // length-delimited, field number 2
+            0x01, // length=1
+            0x61, // "a"
+            0x1a, // length-delimited, field number 3
+            0x04, // length=4
+            0x00, 0x00, 0x00, 0x00, // 0.0f
+        }, protobufObjectMapper.writeValueAsBytes(data, new TypeReference<MessageExample<EnumExample,DataExample>>() {}));
+    }
+
+    public void testDeserialization() throws Exception {
+        MessageExample<EnumExample,DataExample> data = protobufObjectMapper.readValue(new byte[] {
+            0x0a, // length-delimited, field number 1
+            0x02, // length=2
+            0x01, 0x02,
+            0x12, // length-delimited, field number 2
+            0x01, // length=1
+            0x02, // B
+            0x1a, // length-delimited, field number 3
+            0x13, // length=19
+            0x08, // varint, field number 1
+            0x03, // 3
+            0x12, // length-delimited, field number 2
+            0x01, // length=1
+            0x62, // "b"
+            0x1a, // length-delimited, field number 3
+            0x0c, // length=12
+            0x00, 0x00, 0x00, 0x00, // 0.0f
+            0x00, 0x00, 0x00, 0x00, // 0.0f
+            0x00, 0x00, 0x00, 0x00, // 0.0f
+        }, new TypeReference<MessageExample<EnumExample,DataExample>>() {});
+        Assert.assertArrayEquals(new byte[] { 1, 2 }, data.binary);
+        Assert.assertEquals(1, data.ts.size());
+        Assert.assertEquals(EnumExample.B, data.ts.get(0));
+        Assert.assertEquals(1, data.us.length);
+        Assert.assertEquals(3, data.us[0].data);
+        Assert.assertEquals("b", data.us[0].description);
+        Assert.assertEquals(3, data.us[0].floats.length);
+        Assert.assertEquals(0.0, data.us[0].floats[0], Float.MIN_VALUE);
+        Assert.assertEquals(0.0, data.us[0].floats[1], Float.MIN_VALUE);
+        Assert.assertEquals(0.0, data.us[0].floats[2], Float.MIN_VALUE);
     }
 
     public static class Test1 {
