@@ -2,6 +2,8 @@ package com.yrek.jackson.dataformat.protobuf;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JavaType;
@@ -63,10 +65,27 @@ public class ProtobufSchema {
     }
 
     public Appendable getProtobufDefinition(Appendable appendable) throws IOException {
+        HashSet<JavaType> empty = new HashSet<JavaType>();
+        for (;;) {
+            int size = empty.size();
+            for (Map.Entry<JavaType,MessageDescription> e : messages.entrySet()) {
+                if (empty.contains(e.getKey()))
+                    continue;
+                int count = 0;
+                for (MessageField messageField : e.getValue().getMessageFields())
+                    if (!empty.contains(messageField.getElementJavaType()))
+                        count++;
+                if (count == 0)
+                    empty.add(e.getKey());
+            }
+            if (empty.size() == size)
+                break;
+        }
         for (EnumDescription enumDescription : enums.values())
             enumDescription.getProtobufDefinition(appendable);
-        for (MessageDescription messageDescription : messages.values())
-            messageDescription.getProtobufDefinition(appendable);
+        for (Map.Entry<JavaType,MessageDescription> e : messages.entrySet())
+            if (!empty.contains(e.getKey()))
+                e.getValue().getProtobufDefinition(appendable, empty);
         return appendable;
     }
 }

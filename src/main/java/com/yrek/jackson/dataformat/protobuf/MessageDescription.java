@@ -3,6 +3,7 @@ package com.yrek.jackson.dataformat.protobuf;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import com.fasterxml.jackson.databind.BeanDescription;
@@ -62,9 +63,14 @@ class MessageDescription {
     }
 
     public Appendable getProtobufDefinition(Appendable appendable) throws IOException {
+        return getProtobufDefinition(appendable, null);
+    }
+
+    public Appendable getProtobufDefinition(Appendable appendable, Set<JavaType> ignore) throws IOException {
         appendable.append("message ").append(messageName).append(" {\n");
         for (MessageField messageField : getMessageFields())
-            messageField.getProtobufDefinition(appendable.append("  ")).append(";\n");
+            if (ignore == null || !ignore.contains(messageField.getElementJavaType()))
+                messageField.getProtobufDefinition(appendable.append("  ")).append(";\n");
         return appendable.append("}\n");
     }
 

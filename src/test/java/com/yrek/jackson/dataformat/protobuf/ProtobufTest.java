@@ -35,6 +35,7 @@ public class ProtobufTest {
     @Test
     public void testSchema() throws Exception {
         Assert.assertEquals("enum EnumExample {\n  A = 1;\n  B = 2;\n  C = 3;\n}\nmessage MessageExampleEnumExampleDataExample {\n  optional bytes binary = 1;\n  repeated EnumExample ts = 2 [packed=true];\n  repeated DataExample us = 3;\n}\nmessage DataExample {\n  optional int32 data = 1;\n  optional string description = 2;\n  repeated float floats = 3 [packed=true];\n}\n", protobufObjectMapper.collectTypes(new TypeReference<MessageExample<EnumExample,DataExample>>() {}).getProtobufDefinition());
+        Assert.assertEquals("message MessageExampleVoidbytesint32 {\n  optional bytes binary = 1;\n  repeated bytes us = 3;\n}\n", protobufObjectMapper.collectTypes(new TypeReference<MessageExample<Void,byte[]>>() {}).getProtobufDefinition());
     }
 
     @Test
